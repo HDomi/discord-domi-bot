@@ -6,8 +6,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  SERVER_DOCKER_IMG_NAME: h-domi-bot # 여기에 실제 이미지 이름을 입력하세요
-  SERVER_NAME: domi-bot # 여기에 실제 서버 이름을 입력하세요
+  SERVER_DOCKER_IMG_NAME: discord-domi-bot # 여기에 실제 이미지 이름을 입력하세요
+  SERVER_NAME: discord-domi-bot # 여기에 실제 서버 이름을 입력하세요
 
 jobs:
   deploy:
