@@ -32,6 +32,6 @@ jobs:
             docker stop ${{ env.SERVER_DOCKER_IMG_NAME }} || true
             docker rm ${{ env.SERVER_DOCKER_IMG_NAME }} || true
             sleep 30
-            docker build --build-arg DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }} --build-arg CLIENT_ID=${{ secrets.CLIENT_ID }} -t ${{ env.SERVER_DOCKER_IMG_NAME }}:latest -f Dockerfile . && \
-            docker run -e DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }} -e CLIENT_ID=${{ secrets.CLIENT_ID }} -d --name ${{ env.SERVER_DOCKER_IMG_NAME }} -p 5539:5539 ${{ env.SERVER_DOCKER_IMG_NAME }}:latest
+            docker build --build-arg DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }} --build-arg CLIENT_ID=${{ secrets.CLIENT_ID }} -t ${{ env.SERVER_DOCKER_IMG_NAME }}:latest -f Dockerfile . && \
+            docker run -e DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }} -e CLIENT_ID=${{ secrets.CLIENT_ID }} -d --name ${{ env.SERVER_DOCKER_IMG_NAME }} -p 5539:5539 ${{ env.SERVER_DOCKER_IMG_NAME }}:latest
           EOF
