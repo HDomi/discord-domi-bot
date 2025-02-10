@@ -125,8 +125,8 @@ module.exports = {
             }
 
             //명령을 실행한 유저가 관리자 권한이 있는지 확인
-            if (!i.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                return i.reply("관리자 권한이 없습니다.");
+            if (!i.member.permissions.has(PermissionsBitField.Flags.MoveMembers)) {
+                return i.reply(`${userName}님, 멤버이동 권한이 없습니다.`);
             }
 
             const curChannels = interaction.guild.channels.cache;
