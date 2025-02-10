@@ -1,0 +1,37 @@
+name: Deploy to NAS Server
+
+on:
+  push:
+    branches: ["main"]
+
+env:
+  REGISTRY: ghcr.io
+  SERVER_DOCKER_IMG_NAME: h-domi-bot # 여기에 실제 이미지 이름을 입력하세요
+  SERVER_NAME: domi-bot # 여기에 실제 서버 이름을 입력하세요
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up SSH connection
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }} # GitHub Secrets에 SSH 키를 저장하세요
+
+      - name: Build and Deploy Docker Image
+        run: |
+          ssh -vvv -o StrictHostKeyChecking=no ${{ secrets.NAS_USER }}@${{ secrets.NAS_IP }} -p ${{ secrets.NAS_PORT }} << 'EOF'
+            cd /volume1/docker/frontend
+            rm -rf ${{ env.SERVER_NAME }}
+            mkdir ${{ env.SERVER_NAME }}
+            git clone -b main --single-branch https://github.com/HDomi/domi-blog.git
+            cd ${{ env.SERVER_NAME }}
+            docker stop ${{ env.SERVER_DOCKER_IMG_NAME }} || true
+            docker rm ${{ env.SERVER_DOCKER_IMG_NAME }} || true
+            sleep 30
+            docker build --build-arg DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }} --build-arg CLIENT_ID=${{ secrets.CLIENT_ID }} --build-arg GUILD_ID=${{ secrets.GUILD_ID }} -t ${{ env.SERVER_DOCKER_IMG_NAME }}:latest -f Dockerfile . && \
+            docker run -e DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }} -e CLIENT_ID=${{ secrets.CLIENT_ID }} -e GUILD_ID=${{ secrets.GUILD_ID }} -d --name ${{ env.SERVER_DOCKER_IMG_NAME }} -p 3000:3000 ${{ env.SERVER_DOCKER_IMG_NAME }}:latest
+          EOF
