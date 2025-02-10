@@ -27,7 +27,7 @@ jobs:
             cd /volume1/docker/backend
             rm -rf ${{ env.SERVER_NAME }}
             mkdir ${{ env.SERVER_NAME }}
-            git clone -b main --single-branch https://github.com/HDomi/domi-bot.git
+            git clone -b main --single-branch https://github.com/HDomi/discord-domi-bot.git
             cd ${{ env.SERVER_NAME }}
             docker stop ${{ env.SERVER_DOCKER_IMG_NAME }} || true
             docker rm ${{ env.SERVER_DOCKER_IMG_NAME }} || true
