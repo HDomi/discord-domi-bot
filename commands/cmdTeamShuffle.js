@@ -96,6 +96,7 @@ module.exports = {
             await interaction.followUp({ embeds: [embed], components: [row] });
         }
 
+        
         // 버튼 클릭 이벤트 처리
         const filter = i => i.customId.startsWith('move') || i.customId === 'back' || i.customId === 'reshuffle';
         const collector = interaction.channel.createMessageComponentCollector({ filter, time: 60000 });
