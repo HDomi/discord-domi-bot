@@ -10,7 +10,6 @@ require('dotenv').config();
 
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.CLIENT_ID;
-const guildId = process.env.GUILD_ID;
 const rest = new REST({ version: '10' }).setToken(token);
 
 const client = new Client({ intents: [
@@ -72,7 +71,7 @@ client.on('interactionCreate', async interaction => {
 
 		// The put method is used to fully refresh all commands in the guild with the current set
 		const data = await rest.put(
-			Routes.applicationGuildCommands(clientId, guildId),
+			Routes.applicationCommands(clientId),
 			{ body: commands },
 		);
 
