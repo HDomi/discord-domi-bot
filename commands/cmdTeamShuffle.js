@@ -1,6 +1,6 @@
 // commands/cmdTeamShuffle.js
 const { SlashCommandBuilder } = require('discord.js');
-const { ActionRowBuilder, ButtonBuilder, EmbedBuilder, ButtonStyle } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, EmbedBuilder, ButtonStyle, PermissionsBitField } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -10,14 +10,18 @@ module.exports = {
         const { user } = interaction.member;
         const userName = user.globalName || user.nickname || user.username || '신원미상';
         const voiceChannel = interaction.member.voice.channel;
-        
+
+         //명령을 실행한 유저가 관리자 권한이 있는지 확인
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply(`${userName}님, 관리자 권한이 없습니다.`);
+        }
         if (!voiceChannel) {
             return interaction.reply(`${userName}님, 먼저 음성채널에 들어가주세요.`);
         }
 
         const members = voiceChannel.members.map(member => member.user);
-        const team1 = [];
-        const team2 = [];
+        let team1 = [];
+        let team2 = [];
         const half = Math.ceil(members.length / 2);
 
         // 음성 채널 이름을 공백으로 분리하여 첫 번째 요소를 추출
@@ -106,7 +110,11 @@ module.exports = {
         collector.on('collect', async i => {
             // 버튼 클릭 시, 이미 응답이 전송된 경우 업데이트
             const updateResponse = async (content, newEmbed = null) => {
-                await i.update({ content, embeds: newEmbed ? [newEmbed] : [], components: [row] });
+                if (!i.replied && !i.deferred) {
+                    await i.update({ content, embeds: newEmbed ? [newEmbed] : [], components: [row] });
+                } else {
+                    await i.followUp({ content, embeds: newEmbed ? [newEmbed] : [], components: [row] });
+                }
             };
 
             // 현재 음성 채널을 다시 가져오기
@@ -114,6 +122,11 @@ module.exports = {
 
             if (!currentVoiceChannel) {
                 return i.reply("먼저 음성채널에 들어가주세요.");
+            }
+
+            //명령을 실행한 유저가 관리자 권한이 있는지 확인
+            if (!i.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                return i.reply("관리자 권한이 없습니다.");
             }
 
             const curChannels = interaction.guild.channels.cache;
@@ -131,8 +144,10 @@ module.exports = {
                 shuffledMembers.forEach((member, index) => {
                     if (index < newHalf) {
                         newTeam1.push(member);
+                        team1 = newTeam1;
                     } else {
                         newTeam2.push(member);
+                        team2 = newTeam2;
                     }
                 });
 
