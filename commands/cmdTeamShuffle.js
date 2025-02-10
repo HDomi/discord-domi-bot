@@ -12,8 +12,8 @@ module.exports = {
         const voiceChannel = interaction.member.voice.channel;
 
          //명령을 실행한 유저가 관리자 권한이 있는지 확인
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply(`${userName}님, 관리자 권한이 없습니다.`);
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.MoveMembers)) {
+            return interaction.reply(`${userName}님, 멤버이동 권한이 없습니다.`);
         }
         if (!voiceChannel) {
             return interaction.reply(`${userName}님, 먼저 음성채널에 들어가주세요.`);
