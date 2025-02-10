@@ -7,10 +7,12 @@ module.exports = {
         .setName('팀섞')
         .setDescription('팀을 섞고 임베디드 메시지를 표시합니다.'),
     async execute(interaction) {
-        const user = interaction.member.user;
+        const { user } = interaction.member;
+        const userName = user.globalName || user.nickname || user.username || '신원미상';
         const voiceChannel = interaction.member.voice.channel;
+        
         if (!voiceChannel) {
-            return interaction.reply("먼저 음성채널에 들어가주세요.");
+            return interaction.reply(`${userName}님, 먼저 음성채널에 들어가주세요.`);
         }
 
         const members = voiceChannel.members.map(member => member.user);
@@ -96,7 +98,7 @@ module.exports = {
             await interaction.followUp({ embeds: [embed], components: [row] });
         }
 
-        
+
         // 버튼 클릭 이벤트 처리
         const filter = i => i.customId.startsWith('move') || i.customId === 'back' || i.customId === 'reshuffle';
         const collector = interaction.channel.createMessageComponentCollector({ filter, time: 60000 });
@@ -147,33 +149,36 @@ module.exports = {
             } else if (i.customId === 'moveTeam1') {
                 const team1Channel = curChannels.find(channel => channel.name === team1ChannelObj.name);
                 if (team1Channel) {
+                    await i.deferUpdate(); // 상호작용 지연
                     for (const member of team1) {
                         const guildMember = await interaction.guild.members.fetch(member.id);
                         await guildMember.voice.setChannel(team1Channel);
                     }
-                    await updateResponse("팀1이 이동합니다.");
+                    await interaction.followUp("팀1이 이동되었습니다.");
                 } else {
                     await i.reply({ content: "팀1을 이동할 음성 채널이 없습니다.", flags: 64 }); // ephemeral: true
                 }
             } else if (i.customId === 'moveTeam2') {
                 const team2Channel = curChannels.find(channel => channel.name === team2ChannelObj.name);
                 if (team2Channel) {
+                    await i.deferUpdate(); // 상호작용 지연
                     for (const member of team2) {
                         const guildMember = await interaction.guild.members.fetch(member.id);
                         await guildMember.voice.setChannel(team2Channel);
                     }
-                    await updateResponse("팀2가 이동합니다.");
+                    await interaction.followUp("팀2가 이동되었습니다.");
                 } else {
                     await i.reply({ content: "팀2를 이동할 음성 채널이 없습니다.", flags: 64 }); // ephemeral: true
                 }
             } else if (i.customId === 'moveWaitingRoom') {
                 const waitingRoomChannel = curChannels.find(channel => channel.id === voiceChannel.id);
                 if (waitingRoomChannel) {
+                    await i.deferUpdate(); // 상호작용 지연
                     for (const member of members) {
                         const guildMember = await interaction.guild.members.fetch(member.id);
                         await guildMember.voice.setChannel(waitingRoomChannel);
                     }
-                    await updateResponse("모든 사용자가 대기방으로 이동합니다.");
+                    await interaction.followUp("모든 사용자가 대기방으로 이동되었습니다.");
                 } else {
                     await i.reply({ content: "대기방으로 이동할 음성 채널이 없습니다.", flags: 64 }); // ephemeral: true
                 }
