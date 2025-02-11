@@ -19,6 +19,10 @@ module.exports = {
                 return;
             }
             const hasGame = await getHasGame(userId);
+            if (!hasGame) {
+                await interaction.reply({ content: '게임을 찾을 수 없습니다.', ephemeral: true });
+                return;
+            }
             // const pubgInfo = await getCurrentGameInfo(userId, 578080);
             const getTop3Game = () => {
                 const top3Game = hasGame.sort((a, b) => b.playTime - a.playTime).slice(0, 3);
@@ -45,7 +49,7 @@ module.exports = {
             }
         } catch (error) {
             console.error('오류 발생:', error);
-            await interaction.reply({ content: '오류가 발생했습니다. 다시 시도해주세요.', ephemeral: true });
+            await interaction.reply({ content: '스팀 커뮤니티 ID가 잘못되었거나, 비공개 상태입니다.', ephemeral: true });
         }
     }
 };

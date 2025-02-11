@@ -20,8 +20,13 @@ const convertTimestampToDate = (timestamp) => {
 const getSteamUserId = async (steamId) => {
     try {
         const steam = await returnSteamClient();
-        const id = await steam.resolve(`https://steamcommunity.com/id/${steamId}`);
-        return id;
+        const numbering = Number(steamId);
+        if (isNaN(numbering)) {
+            const id = await steam.resolve(`https://steamcommunity.com/id/${steamId}`);
+            return id;
+        } else {
+            return steamId;
+        }
     } catch (error) {
         console.error('유효하지 않은 Steam ID입니다:', error.message);
         throw new Error('Steam ID를 확인해주세요.');
@@ -30,19 +35,23 @@ const getSteamUserId = async (steamId) => {
 
 const getHasGame = async (steamId) => {
     const steam = await returnSteamClient();
-    const games = await steam.getUserOwnedGames(steamId, {
-        includeAppInfo: true,
-    }) || [];
-
-    const gameList = games.map(g => {
-        return {
-            gameId: g.game.id,
-            gameName: g.game.name,
-            playTime: g.minutes,
-            lastPlayed: convertTimestampToDate(g.lastPlayedTimestamp),
-        }
-    });
-    return gameList;
+    try {
+        const games = await steam.getUserOwnedGames(steamId, {
+            includeAppInfo: true,
+        }) || [];
+        const gameList = games.map(g => {
+            return {
+                gameId: g.game.id,
+                gameName: g.game.name,
+                playTime: g.minutes,
+                lastPlayed: convertTimestampToDate(g.lastPlayedTimestamp),
+            }
+        });
+        return gameList;
+    } catch (error) {
+        console.error('게임을 찾을 수 없습니다.', error.message);
+        throw new Error('게임을 찾을 수 없습니다.');
+    }
 }
 
 const getCurrentGameInfo = async (steamId, gameId) => {
