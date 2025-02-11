@@ -12,6 +12,7 @@ const getTimeAndMinutes = (minutes) => {
     return `${hours}시간 ${mins}분`;
 }
 const convertTimestampToDate = (timestamp) => {
+    if (!timestamp) return '숨겨져있거나 찾을 수 없습니다.';
     const date = new Date(timestamp * 1000);
     return date.toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
@@ -27,12 +28,23 @@ const getSteamUserId = async (steamId) => {
     }
 }
 
-const getGameCount = async (steamId) => {
+const getHasGame = async (steamId) => {
     const steam = await returnSteamClient();
-    const gameCount = await steam.getUserOwnedGames(steamId) || [];
-    return gameCount.length;
+    const games = await steam.getUserOwnedGames(steamId, {
+        includeAppInfo: true,
+    }) || [];
+
+    const gameList = games.map(g => {
+        return {
+            gameId: g.game.id,
+            gameName: g.game.name,
+            playTime: g.minutes,
+            lastPlayed: convertTimestampToDate(g.lastPlayedTimestamp),
+        }
+    });
+    return gameList;
 }
-// 578080
+
 const getCurrentGameInfo = async (steamId, gameId) => {
     const steam = await returnSteamClient();
     const gamesInfo = await steam.getUserOwnedGames(steamId);
@@ -50,4 +62,4 @@ const getCurrentGameInfo = async (steamId, gameId) => {
     return info;
 }
 
-module.exports = { getSteamUserId, getGameCount, getCurrentGameInfo };
+module.exports = { getSteamUserId, getHasGame, getCurrentGameInfo, getTimeAndMinutes };
