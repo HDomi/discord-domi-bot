@@ -1,6 +1,5 @@
 require('dotenv').config();
 
-
 const returnSteamClient = async () => {
     const steamKey = process.env.STEAM_API;
     const SteamAPI = (await import('steamapi')).default;
