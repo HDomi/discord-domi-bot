@@ -7,12 +7,12 @@ module.exports = {
         .setName('스팀')
         .setDescription('스팀 게임 정보')
         .addStringOption(option => 
-            option.setName('스팀커뮤니티ID')
+            option.setName('steam-community-id')
             .setDescription('스팀 커뮤니티 ID를 입력하세요(내 프로필 누르면 상단 주소)')
             .setRequired(true)),
     async execute(interaction) {
         try {
-            const userInput = interaction.options.getString('스팀커뮤니티ID') || '기본값';
+            const userInput = interaction.options.getString('steam-community-id') || '기본값';
             const userId = await getSteamUserId(userInput);
             if (!userId) {
                 await interaction.reply({ content: '존재하지 않거나 비공개 처리된 스팀 아이디입니다.', ephemeral: true });
