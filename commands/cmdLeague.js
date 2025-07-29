@@ -232,7 +232,6 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('리그')
         .setDescription('리그용 커맨드입니다.'),
-    
     /**
      * 리그 커맨드 실행 함수
      * @param {import('discord.js').CommandInteraction} interaction - 커맨드 상호작용
