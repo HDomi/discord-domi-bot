@@ -105,6 +105,10 @@ function createTeamManagementButtons() {
                 .setLabel('➕ 팀 생성')
                 .setStyle(ButtonStyle.Success),
             new ButtonBuilder()
+                .setCustomId('edit_team')
+                .setLabel('✏️ 팀 편집')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
                 .setCustomId('delete_team')
                 .setLabel('❌ 팀 삭제')
                 .setStyle(ButtonStyle.Danger),
@@ -115,6 +119,63 @@ function createTeamManagementButtons() {
             new ButtonBuilder()
                 .setCustomId('back_to_main')
                 .setLabel('🔙 메인으로')
+                .setStyle(ButtonStyle.Secondary)
+        )
+}
+
+/**
+ * 팀 편집 메뉴 임베드를 생성하는 함수
+ * @param {string} teamName - 팀 이름
+ * @param {Map} teams - 팀 데이터
+ * @returns {EmbedBuilder} - 팀 편집 메뉴 임베드
+ */
+function createTeamEditEmbed(teamName, teams) {
+    const teamData = teams.get(teamName)
+    if (!teamData) {
+        return new EmbedBuilder()
+            .setColor(0xff0000)
+            .setTitle('⚠️ 오류')
+            .setDescription('팀 정보를 찾을 수 없습니다.')
+    }
+
+    const memberList = Array.from(teamData.members).map(userId => `<@${userId}>`).join(', ') || '없음'
+    const voiceChannel = teamData.voiceChannelId ? `<#${teamData.voiceChannelId}>` : '설정 안됨'
+
+    return new EmbedBuilder()
+        .setColor(0x426cf5)
+        .setTitle(`✏️ "${teamName}" 팀 편집`)
+        .setDescription('수행할 작업을 선택하세요.')
+        .addFields(
+            { name: '현재 점수', value: `${teamData.score}점` },
+            { name: '현재 멤버', value: memberList },
+            { name: '현재 음성채널', value: voiceChannel }
+        )
+        .setTimestamp()
+}
+
+/**
+ * 팀 편집 메뉴 버튼을 생성하는 함수
+ * @param {string} teamName - 팀 이름
+ * @returns {ActionRowBuilder} - 팀 편집 메뉴 버튼
+ */
+function createTeamEditButtons(teamName) {
+    return new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId(`edit_name_${teamName}`)
+                .setLabel('이름 변경')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId(`manage_members_${teamName}`)
+                .setLabel('멤버 관리')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId(`edit_channel_${teamName}`)
+                .setLabel('채널 변경')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('team_management')
+                .setLabel('🔙 팀 관리로')
                 .setStyle(ButtonStyle.Secondary)
         )
 }
@@ -232,12 +293,8 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('리그')
         .setDescription('리그용 커맨드입니다.'),
-    /**
-     * 리그 커맨드 실행 함수
-     * @param {import('discord.js').CommandInteraction} interaction - 커맨드 상호작용
-     */
+    
     async execute(interaction) {
-        // 서버에서만 실행 가능하도록 체크
         if (!interaction.guild) {
             const embed = new EmbedBuilder()
                 .setColor(0xff0000)
@@ -257,49 +314,25 @@ module.exports = {
             components: [buttons]
         })
 
-        // 컴포넌트 상호작용 처리
-        const filter = i => i.user.id === interaction.user.id
         const collector = interaction.channel.createMessageComponentCollector({ 
-            filter, 
+            filter: i => i.user.id === interaction.user.id, 
             time: 300000 // 5분
         })
 
         collector.on('collect', async i => {
-            // 서버 및 길드 존재 확인
-            if (!i.guild || !interaction.guild) {
-                const embed = new EmbedBuilder()
-                    .setColor(0xff0000)
-                    .setTitle('⚠️ 오류')
-                    .setDescription('서버 정보를 가져올 수 없습니다.')
-                
-                await i.reply({ embeds: [embed], flags: MessageFlags.Ephemeral })
-                return
-            }
-
-            const guildData = getLeagueData(interaction.guild.id)
+            if (!i.guild) { return }
+            const guildData = getLeagueData(i.guild.id)
 
             try {
-                if (i.customId === 'team_management') {
+                // Main Menu Navigation
+                if (i.customId === 'team_management' || i.customId === 'back_to_team_management') {
                     const embed = createTeamManagementEmbed()
                     const buttons = createTeamManagementButtons()
                     await i.update({ embeds: [embed], components: [buttons] })
-
-                } else if (i.customId === 'team_list') {
-                    const embed = createTeamListEmbed(guildData.teams)
-                    const backButton = new ActionRowBuilder()
-                        .addComponents(
-                            new ButtonBuilder()
-                                .setCustomId('back_to_main')
-                                .setLabel('🔙 메인으로')
-                                .setStyle(ButtonStyle.Secondary)
-                        )
-                    await i.update({ embeds: [embed], components: [backButton] })
-
                 } else if (i.customId === 'score_management') {
                     const embed = createScoreManagementEmbed(guildData.teams)
                     const buttons = createScoreManagementButtons(guildData.teams)
                     await i.update({ embeds: [embed], components: [buttons] })
-
                 } else if (i.customId === 'team_movement') {
                     if (guildData.teams.size === 0) {
                         const embed = new EmbedBuilder()
@@ -309,42 +342,26 @@ module.exports = {
                         await i.update({ embeds: [embed], components: [createMainMenuButtons()] })
                         return
                     }
-
-                    const embed = new EmbedBuilder()
-                        .setColor(0x426cf5)
-                        .setTitle('🔊 팀 이동')
-                        .setDescription('이동할 팀을 선택하세요.')
-
+                    const embed = new EmbedBuilder().setColor(0x426cf5).setTitle('🔊 팀 이동').setDescription('이동할 팀을 선택하세요.')
                     const teamSelect = createTeamSelectMenu(guildData.teams, 'move_team_select', '이동할 팀 선택')
-                    const backButton = new ActionRowBuilder()
-                        .addComponents(
-                            new ButtonBuilder()
-                                .setCustomId('back_to_main')
-                                .setLabel('🔙 메인으로')
-                                .setStyle(ButtonStyle.Secondary)
-                        )
-
+                    const backButton = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('back_to_main').setLabel('🔙 메인으로').setStyle(ButtonStyle.Secondary))
                     await i.update({ embeds: [embed], components: [teamSelect, backButton] })
-
-                } else if (i.customId === 'create_team') {
-                    const embed = new EmbedBuilder()
-                        .setColor(0x426cf5)
-                        .setTitle('➕ 팀 생성')
-                        .setDescription('새로운 팀을 생성합니다. 팀 이름을 입력해주세요.')
-                        .addFields(
-                            { name: '📝 입력 방법', value: '채팅창에 팀 이름을 입력하세요. (예: 팀A, 블루팀)' }
-                        )
-
+                } else if (i.customId === 'team_list') {
+                    const embed = createTeamListEmbed(guildData.teams)
+                    const backButton = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('back_to_main').setLabel('🔙 메인으로').setStyle(ButtonStyle.Secondary))
+                    await i.update({ embeds: [embed], components: [backButton] })
+                } else if (i.customId === 'back_to_main') {
+                    const embed = createMainMenuEmbed(interaction.guild.name)
+                    const buttons = createMainMenuButtons()
+                    await i.update({ embeds: [embed], components: [buttons] })
+                }
+                
+                // Team Management
+                else if (i.customId === 'create_team') {
+                    const embed = new EmbedBuilder().setColor(0x426cf5).setTitle('➕ 팀 생성').setDescription('새로운 팀을 생성합니다. 팀 이름을 입력해주세요.').addFields({ name: '📝 입력 방법', value: '채팅창에 팀 이름을 입력하세요. (예: 팀A, 블루팀)' })
                     await i.update({ embeds: [embed], components: [] })
-
-                    // 메시지 수집기로 팀 이름 입력 받기
                     const messageFilter = m => m.author.id === i.user.id
-                    const messageCollector = interaction.channel.createMessageCollector({ 
-                        filter: messageFilter, 
-                        time: 30000, 
-                        max: 1 
-                    })
-
+                    const messageCollector = interaction.channel.createMessageCollector({ filter: messageFilter, time: 30000, max: 1 })
                     messageCollector.on('collect', async m => {
                         const teamName = m.content.trim()
                         
@@ -369,43 +386,39 @@ module.exports = {
                         const successEmbed = new EmbedBuilder()
                             .setColor(0x00ff00)
                             .setTitle('✅ 팀 생성 완료')
-                            .setDescription(`팀 "${teamName}"이 성공적으로 생성되었습니다!`)
+                            .setDescription(`팀 "${teamName}"이 성공적으로 생성되었습니다.`)
                             .addFields(
-                                { name: '다음 단계', value: '팀원을 추가하고 음성채널을 설정하세요.' }
+                                { name: '다음 단계', value: '팀원을 선택해주세요.' }
                             )
 
                         const userSelect = new ActionRowBuilder()
                             .addComponents(
                                 new UserSelectMenuBuilder()
-                                    .setCustomId(`add_members_${teamName}`)
+                                    .setCustomId(`add_members_after_create_${teamName}`)
                                     .setPlaceholder('팀원 선택 (최대 25명)')
                                     .setMinValues(1)
                                     .setMaxValues(25)
                             )
-
-                        const channelSelect = new ActionRowBuilder()
-                            .addComponents(
-                                new ChannelSelectMenuBuilder()
-                                    .setCustomId(`set_voice_channel_${teamName}`)
-                                    .setPlaceholder('음성채널 선택')
-                                    .addChannelTypes(ChannelType.GuildVoice)
-                            )
-
-                        const backButton = new ActionRowBuilder()
-                            .addComponents(
-                                new ButtonBuilder()
-                                    .setCustomId('team_management')
-                                    .setLabel('🔙 팀 관리로')
-                                    .setStyle(ButtonStyle.Secondary)
-                            )
-
+                        
                         await m.delete().catch(() => {})
                         await interaction.editReply({ 
                             embeds: [successEmbed], 
-                            components: [userSelect, channelSelect, backButton] 
+                            components: [userSelect] 
                         })
                     })
-
+                } else if (i.customId === 'edit_team') {
+                    if (guildData.teams.size === 0) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('⚠️ 오류')
+                            .setDescription('편집할 팀이 없습니다.')
+                        await i.update({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        return
+                    }
+                    const embed = new EmbedBuilder().setColor(0x426cf5).setTitle('✏️ 팀 편집').setDescription('편집할 팀을 선택하세요.')
+                    const teamSelect = createTeamSelectMenu(guildData.teams, 'edit_team_select', '편집할 팀 선택')
+                    const backButton = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('back_to_team_management').setLabel('🔙 팀 관리로').setStyle(ButtonStyle.Secondary))
+                    await i.update({ embeds: [embed], components: [teamSelect, backButton] })
                 } else if (i.customId === 'delete_team') {
                     if (guildData.teams.size === 0) {
                         const embed = new EmbedBuilder()
@@ -415,126 +428,148 @@ module.exports = {
                         await i.update({ embeds: [embed], components: [createTeamManagementButtons()] })
                         return
                     }
-
-                    const embed = new EmbedBuilder()
-                        .setColor(0xff0000)
-                        .setTitle('❌ 팀 삭제')
-                        .setDescription('삭제할 팀을 선택하세요.')
-
+                    const embed = new EmbedBuilder().setColor(0xff0000).setTitle('❌ 팀 삭제').setDescription('삭제할 팀을 선택하세요.')
                     const teamSelect = createTeamSelectMenu(guildData.teams, 'delete_team_confirm', '삭제할 팀 선택')
-                    const backButton = new ActionRowBuilder()
-                        .addComponents(
-                            new ButtonBuilder()
-                                .setCustomId('team_management')
-                                .setLabel('🔙 팀 관리로')
-                                .setStyle(ButtonStyle.Secondary)
-                        )
-
+                    const backButton = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('back_to_team_management').setLabel('🔙 팀 관리로').setStyle(ButtonStyle.Secondary))
                     await i.update({ embeds: [embed], components: [teamSelect, backButton] })
-
                 } else if (i.customId === 'reset_all_teams') {
-                    const embed = new EmbedBuilder()
-                        .setColor(0xff0000)
-                        .setTitle('🗑️ 전체 초기화')
-                        .setDescription('정말로 모든 팀을 삭제하시겠습니까?\n**이 작업은 되돌릴 수 없습니다.**')
-
-                    const confirmButtons = new ActionRowBuilder()
-                        .addComponents(
-                            new ButtonBuilder()
-                                .setCustomId('confirm_reset_all')
-                                .setLabel('✅ 확인')
-                                .setStyle(ButtonStyle.Danger),
-                            new ButtonBuilder()
-                                .setCustomId('team_management')
-                                .setLabel('❌ 취소')
-                                .setStyle(ButtonStyle.Secondary)
-                        )
-
+                    const embed = new EmbedBuilder().setColor(0xff0000).setTitle('🗑️ 전체 초기화').setDescription('정말로 모든 팀을 삭제하시겠습니까?\n**이 작업은 되돌릴 수 없습니다.**')
+                    const confirmButtons = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('confirm_reset_all').setLabel('✅ 확인').setStyle(ButtonStyle.Danger), new ButtonBuilder().setCustomId('back_to_team_management').setLabel('❌ 취소').setStyle(ButtonStyle.Secondary))
                     await i.update({ embeds: [embed], components: [confirmButtons] })
-
                 } else if (i.customId === 'confirm_reset_all') {
-                    guildData.teams.clear()
-                    guildData.teamCounter = 0
-
-                    const embed = new EmbedBuilder()
-                        .setColor(0x00ff00)
-                        .setTitle('✅ 초기화 완료')
-                        .setDescription('모든 팀이 성공적으로 삭제되었습니다.')
-
+                    guildData.teams.clear();
+                    const embed = new EmbedBuilder().setColor(0x00ff00).setTitle('✅ 초기화 완료').setDescription('모든 팀이 성공적으로 삭제되었습니다.')
                     await i.update({ embeds: [embed], components: [createTeamManagementButtons()] })
+                } 
 
-                } else if (i.customId === 'add_score') {
+                // Score Management
+                else if (i.customId === 'add_score' || i.customId === 'subtract_score') {
+                    const isAdding = i.customId === 'add_score'
                     const embed = new EmbedBuilder()
                         .setColor(0x426cf5)
-                        .setTitle('➕ 점수 추가')
-                        .setDescription('점수를 추가할 팀을 선택하세요.')
+                        .setTitle(isAdding ? '➕ 점수 추가' : '➖ 점수 차감')
+                        .setDescription(`점수를 ${isAdding ? '추가할' : '차감할'} 팀을 선택하세요.`)
 
-                    const teamSelect = createTeamSelectMenu(guildData.teams, 'add_score_team_select', '점수를 추가할 팀 선택')
-                    const backButton = new ActionRowBuilder()
-                        .addComponents(
-                            new ButtonBuilder()
-                                .setCustomId('score_management')
-                                .setLabel('🔙 점수 관리로')
-                                .setStyle(ButtonStyle.Secondary)
-                        )
-
+                    const teamSelect = createTeamSelectMenu(guildData.teams, isAdding ? 'add_score_team_select' : 'subtract_score_team_select', '점수를 변경할 팀 선택')
+                    const backButton = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('score_management').setLabel('🔙 점수 관리로').setStyle(ButtonStyle.Secondary))
                     await i.update({ embeds: [embed], components: [teamSelect, backButton] })
+                }
 
-                } else if (i.customId === 'subtract_score') {
+                // Team Editing
+                else if (i.customId.startsWith('edit_name_')) {
+                    const teamName = i.customId.replace('edit_name_', '')
                     const embed = new EmbedBuilder()
                         .setColor(0x426cf5)
-                        .setTitle('➖ 점수 차감')
-                        .setDescription('점수를 차감할 팀을 선택하세요.')
+                        .setTitle(`✏️ "${teamName}" 이름 변경`)
+                        .setDescription('새로운 팀 이름을 채팅으로 입력해주세요.')
+                    await i.update({ embeds: [embed], components: [] })
 
-                    const teamSelect = createTeamSelectMenu(guildData.teams, 'subtract_score_team_select', '점수를 차감할 팀 선택')
-                    const backButton = new ActionRowBuilder()
-                        .addComponents(
-                            new ButtonBuilder()
-                                .setCustomId('score_management')
-                                .setLabel('🔙 점수 관리로')
-                                .setStyle(ButtonStyle.Secondary)
+                    const messageFilter = m => m.author.id === i.user.id
+                    const messageCollector = interaction.channel.createMessageCollector({ filter: messageFilter, time: 30000, max: 1 })
+
+                    messageCollector.on('collect', async m => {
+                        const newTeamName = m.content.trim()
+                        if (guildData.teams.has(newTeamName)) {
+                            await m.delete().catch(() => {})
+                            await interaction.editReply({
+                                content: `⚠️ 이미 존재하는 팀 이름입니다: ${newTeamName}`,
+                                embeds: [],
+                                components: [createTeamManagementButtons()]
+                            })
+                            return
+                        }
+                        const teamData = guildData.teams.get(teamName)
+                        guildData.teams.set(newTeamName, teamData)
+                        guildData.teams.delete(teamName)
+
+                        await m.delete().catch(() => {})
+                        const successEmbed = new EmbedBuilder()
+                            .setColor(0x00ff00)
+                            .setTitle('✅ 이름 변경 완료')
+                            .setDescription(`팀 이름이 "${teamName}"에서 "${newTeamName}"으로 변경되었습니다.`)
+                        await interaction.editReply({ embeds: [successEmbed], components: [createTeamManagementButtons()] })
+                    })
+
+                } else if (i.customId.startsWith('manage_members_')) {
+                    const teamName = i.customId.replace('manage_members_', '')
+                    const teamData = guildData.teams.get(teamName)
+
+                    const embed = new EmbedBuilder()
+                        .setColor(0x426cf5)
+                        .setTitle(`👥 "${teamName}" 멤버 관리`)
+                        .setDescription(`현재 멤버: ${Array.from(teamData.members).map(id => `<@${id}>`).join(', ') || '없음'}`)
+
+                    const userAddSelect = new ActionRowBuilder().addComponents(
+                        new UserSelectMenuBuilder()
+                            .setCustomId(`add_members_${teamName}`)
+                            .setPlaceholder('추가할 멤버 선택')
+                            .setMinValues(1)
+                            .setMaxValues(25)
+                    )
+
+                    const backButton = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('team_management') // 단순화를 위해 메인으로
+                            .setLabel('🔙 팀 관리로')
+                            .setStyle(ButtonStyle.Secondary)
+                    )
+                    
+                    if (teamData.members.size > 0) {
+                        const memberOptions = Array.from(teamData.members).map(memberId => ({
+                            label: interaction.guild.members.cache.get(memberId)?.displayName || memberId,
+                            value: memberId
+                        }))
+
+                        const userRemoveSelect = new ActionRowBuilder().addComponents(
+                            new StringSelectMenuBuilder()
+                                .setCustomId(`remove_members_${teamName}`)
+                                .setPlaceholder('제외할 멤버 선택')
+                                .addOptions(memberOptions)
+                                .setMinValues(1)
+                                .setMaxValues(memberOptions.length)
                         )
+                        await i.update({ embeds: [embed], components: [userAddSelect, userRemoveSelect, backButton] })
+                    } else {
+                        await i.update({ embeds: [embed], components: [userAddSelect, backButton] })
+                    }
 
-                    await i.update({ embeds: [embed], components: [teamSelect, backButton] })
 
-                } else if (i.customId === 'back_to_main') {
-                    const embed = createMainMenuEmbed(interaction.guild.name)
-                    const buttons = createMainMenuButtons()
-                    await i.update({ embeds: [embed], components: [buttons] })
+                } else if (i.customId.startsWith('edit_channel_')) {
+                    const teamName = i.customId.replace('edit_channel_', '')
+                    const channelSelect = new ActionRowBuilder()
+                        .addComponents(
+                            new ChannelSelectMenuBuilder()
+                                .setCustomId(`set_voice_channel_${teamName}`)
+                                .setPlaceholder('새 음성채널 선택')
+                                .addChannelTypes(ChannelType.GuildVoice)
+                        )
+                    const backButton = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('team_management')
+                            .setLabel('🔙 팀 관리로')
+                            .setStyle(ButtonStyle.Secondary)
+                    )
+                    await i.update({ components: [channelSelect, backButton] })
 
                 } else if (i.isStringSelectMenu()) {
-                    // 드롭다운 메뉴 처리
-                    const selectedValue = i.values[0]
+                    const [action, ...params] = i.customId.split('_');
+                    const teamName = params.join('_');
+                    const selectedValue = i.values[0];
 
-                    if (i.customId === 'delete_team_confirm') {
+                    if (action === 'edit' && teamName === 'team' && selectedValue) {
+                         const embed = createTeamEditEmbed(selectedValue, guildData.teams)
+                         const buttons = createTeamEditButtons(selectedValue)
+                         await i.update({ embeds: [embed], components: [buttons] })
+                    } else if (action === 'delete' && teamName === 'team' && selectedValue) {
                         guildData.teams.delete(selectedValue)
-
-                        const embed = new EmbedBuilder()
-                            .setColor(0x00ff00)
-                            .setTitle('✅ 팀 삭제 완료')
-                            .setDescription(`팀 "${selectedValue}"이 성공적으로 삭제되었습니다.`)
-
+                        const embed = new EmbedBuilder().setColor(0x00ff00).setTitle('✅ 팀 삭제 완료').setDescription(`팀 "${selectedValue}"이 성공적으로 삭제되었습니다.`)
                         await i.update({ embeds: [embed], components: [createTeamManagementButtons()] })
-
-                    } else if (i.customId === 'add_score_team_select') {
-                        const embed = new EmbedBuilder()
-                            .setColor(0x426cf5)
-                            .setTitle('➕ 점수 추가')
-                            .setDescription(`팀 "${selectedValue}"에 추가할 점수를 입력하세요.`)
-                            .addFields(
-                                { name: '📝 입력 방법', value: '채팅창에 숫자를 입력하세요. (예: 1, 5, 10)' }
-                            )
-
+                    } else if (action === 'add' && teamName === 'score' && selectedValue || action === 'subtract' && teamName === 'score' && selectedValue) {
+                        const isAdding = action === 'add'
+                        const embed = new EmbedBuilder().setColor(0x426cf5).setTitle(isAdding ? '➕ 점수 추가' : '➖ 점수 차감').setDescription(`팀 "${selectedValue}"에 ${isAdding ? '추가할' : '차감할'} 점수를 입력하세요.`)
                         await i.update({ embeds: [embed], components: [] })
-
-                        // 점수 입력 받기
                         const messageFilter = m => m.author.id === i.user.id
-                        const messageCollector = interaction.channel.createMessageCollector({ 
-                            filter: messageFilter, 
-                            time: 30000, 
-                            max: 1 
-                        })
-
+                        const messageCollector = interaction.channel.createMessageCollector({ filter: messageFilter, time: 30000, max: 1 })
                         messageCollector.on('collect', async m => {
                             const score = parseInt(m.content.trim())
                             
@@ -561,56 +596,8 @@ module.exports = {
 
                             await m.delete().catch(() => {})
                             await interaction.editReply({ embeds: [successEmbed], components: [createScoreManagementButtons(guildData.teams)] })
-                        })
-
-                    } else if (i.customId === 'subtract_score_team_select') {
-                        const embed = new EmbedBuilder()
-                            .setColor(0x426cf5)
-                            .setTitle('➖ 점수 차감')
-                            .setDescription(`팀 "${selectedValue}"에서 차감할 점수를 입력하세요.`)
-                            .addFields(
-                                { name: '📝 입력 방법', value: '채팅창에 숫자를 입력하세요. (예: 1, 5, 10)' }
-                            )
-
-                        await i.update({ embeds: [embed], components: [] })
-
-                        // 점수 입력 받기
-                        const messageFilter = m => m.author.id === i.user.id
-                        const messageCollector = interaction.channel.createMessageCollector({ 
-                            filter: messageFilter, 
-                            time: 30000, 
-                            max: 1 
-                        })
-
-                        messageCollector.on('collect', async m => {
-                            const score = parseInt(m.content.trim())
-                            
-                            if (isNaN(score)) {
-                                const errorEmbed = new EmbedBuilder()
-                                    .setColor(0xff0000)
-                                    .setTitle('⚠️ 오류')
-                                    .setDescription('올바른 숫자를 입력해주세요.')
-                                
-                                await m.delete().catch(() => {})
-                                await interaction.editReply({ embeds: [errorEmbed], components: [createScoreManagementButtons(guildData.teams)] })
-                                return
-                            }
-
-                            guildData.teams.get(selectedValue).score -= score
-
-                            const successEmbed = new EmbedBuilder()
-                                .setColor(0x00ff00)
-                                .setTitle('✅ 점수 차감 완료')
-                                .setDescription(`팀 "${selectedValue}"에서 ${score}점을 차감했습니다.`)
-                                .addFields(
-                                    { name: '현재 점수', value: `${guildData.teams.get(selectedValue).score}점` }
-                                )
-
-                            await m.delete().catch(() => {})
-                            await interaction.editReply({ embeds: [successEmbed], components: [createScoreManagementButtons(guildData.teams)] })
-                        })
-
-                    } else if (i.customId === 'move_team_select') {
+                        });
+                    } else if (action === 'move' && teamName === 'team' && selectedValue) {
                         const teamData = guildData.teams.get(selectedValue)
                         
                         if (!teamData.voiceChannelId) {
@@ -672,26 +659,65 @@ module.exports = {
                             )
 
                         await i.update({ embeds: [embed], components: [createMainMenuButtons()] })
-                    }
+                    } else if (action === 'remove' && i.customId.startsWith('remove_members_')) {
+                        const teamData = guildData.teams.get(teamName)
+                        i.values.forEach(userId => teamData.members.delete(userId))
 
+                        const embed = new EmbedBuilder()
+                            .setColor(0x00ff00)
+                            .setTitle('✅ 멤버 제외 완료')
+                            .setDescription(`"${teamName}" 팀에서 멤버가 제외되었습니다.`)
+                        await i.update({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        return
+                    }
                 } else if (i.isUserSelectMenu()) {
                     // 사용자 선택 메뉴 처리
-                    const teamName = i.customId.replace('add_members_', '')
+                    const teamName = i.customId.startsWith('add_members_after_create_') 
+                        ? i.customId.replace('add_members_after_create_', '') 
+                        : i.customId.replace('add_members_', '')
+                    
                     const selectedUsers = i.values
                     
                     if (guildData.teams.has(teamName)) {
                         const teamData = guildData.teams.get(teamName)
                         selectedUsers.forEach(userId => teamData.members.add(userId))
 
-                        const embed = new EmbedBuilder()
-                            .setColor(0x00ff00)
-                            .setTitle('✅ 팀원 추가 완료')
-                            .setDescription(`팀 "${teamName}"에 ${selectedUsers.length}명의 멤버가 추가되었습니다.`)
-                            .addFields(
-                                { name: '추가된 멤버', value: selectedUsers.map(id => `<@${id}>`).join(', ') }
-                            )
+                        if (i.customId.startsWith('add_members_after_create_')) {
+                            // 생성 플로우의 다음 단계: 음성채널 선택
+                            const embed = new EmbedBuilder()
+                                .setColor(0x00ff00)
+                                .setTitle('✅ 팀원 추가 완료')
+                                .setDescription(`이제 팀 "${teamName}"이 사용할 음성채널을 선택해주세요.`)
+                            
+                            const channelSelect = new ActionRowBuilder()
+                                .addComponents(
+                                    new ChannelSelectMenuBuilder()
+                                        .setCustomId(`set_voice_channel_${teamName}`)
+                                        .setPlaceholder('음성채널 선택')
+                                        .addChannelTypes(ChannelType.GuildVoice)
+                                )
+                            
+                            const backButton = new ActionRowBuilder()
+                                .addComponents(
+                                    new ButtonBuilder()
+                                        .setCustomId('team_management')
+                                        .setLabel('완료 및 돌아가기')
+                                        .setStyle(ButtonStyle.Success)
+                                )
+                            
+                            await i.update({ embeds: [embed], components: [channelSelect, backButton] })
+                        } else {
+                            // 편집 플로우
+                            const embed = new EmbedBuilder()
+                                .setColor(0x00ff00)
+                                .setTitle('✅ 팀원 추가 완료')
+                                .setDescription(`팀 "${teamName}"에 ${selectedUsers.length}명의 멤버가 추가되었습니다.`)
+                                .addFields(
+                                    { name: '추가된 멤버', value: selectedUsers.map(id => `<@${id}>`).join(', ') }
+                                )
 
-                        await i.update({ embeds: [embed], components: [createTeamManagementButtons()] })
+                            await i.update({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        }
                     }
 
                 } else if (i.isChannelSelectMenu()) {
@@ -717,16 +743,15 @@ module.exports = {
 
             } catch (error) {
                 console.error('Error handling interaction:', error)
-                
-                const errorEmbed = new EmbedBuilder()
-                    .setColor(0xff0000)
-                    .setTitle('⚠️ 오류 발생')
-                    .setDescription('처리 중 오류가 발생했습니다. 다시 시도해주세요.')
-
-                if (!i.replied && !i.deferred) {
-                    await i.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral })
-                } else {
-                    await i.followUp({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral })
+                try {
+                    // Use editReply on the original interaction to prevent crashing
+                    await interaction.editReply({
+                        content: '처리 중 오류가 발생했습니다. 명령어를 다시 실행해주세요.',
+                        embeds: [],
+                        components: [],
+                    })
+                } catch (e) {
+                    console.error('Failed to send error message to user:', e)
                 }
             }
         })
