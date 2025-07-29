@@ -380,8 +380,20 @@ module.exports = {
                     const embed = new EmbedBuilder()
                         .setColor(0x426cf5)
                         .setTitle('🔊 팀 이동')
-                        .setDescription('이동할 팀을 선택하세요.')
-                    const teamSelect = createTeamSelectMenu(currentTeams, 'move_team_select', '이동할 팀 선택')
+                        .setDescription('팀 이동 방식을 선택하세요.')
+                    
+                    const moveButtons = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('move_all_teams')
+                                .setLabel('🚀 모든 팀 이동')
+                                .setStyle(ButtonStyle.Success),
+                            new ButtonBuilder()
+                                .setCustomId('move_single_team')
+                                .setLabel('👤 개별 팀 이동')
+                                .setStyle(ButtonStyle.Primary)
+                        )
+                    
                     const backButton = new ActionRowBuilder()
                         .addComponents(
                             new ButtonBuilder()
@@ -389,7 +401,7 @@ module.exports = {
                                 .setLabel('🔙 메인으로')
                                 .setStyle(ButtonStyle.Secondary)
                         )
-                    await i.editReply({ embeds: [embed], components: [teamSelect, backButton] })
+                    await i.editReply({ embeds: [embed], components: [moveButtons, backButton] })
                     
                 } else if (i.customId === 'team_list') {
                     const embed = createTeamListEmbed(currentTeams)
@@ -534,6 +546,90 @@ module.exports = {
                         .setTitle('✅ 초기화 완료')
                         .setDescription('모든 팀이 성공적으로 삭제되었습니다.')
                     await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                    
+                // === 팀 이동 처리 ===
+                } else if (i.customId === 'move_all_teams') {
+                    if (!i.member.permissions.has(PermissionsBitField.Flags.MoveMembers)) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('⚠️ 권한 부족')
+                            .setDescription('멤버 이동 권한이 필요합니다.')
+                        await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
+                        return
+                    }
+                    
+                    // 음성채널이 설정된 팀만 필터링
+                    const teamsWithChannels = Array.from(currentTeams.entries()).filter(([teamName, teamData]) => teamData.voiceChannelId)
+                    
+                    if (teamsWithChannels.length === 0) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('⚠️ 오류')
+                            .setDescription('음성채널이 설정된 팀이 없습니다. 먼저 팀에 음성채널을 설정해주세요.')
+                        await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
+                        return
+                    }
+                    
+                    let totalMoved = 0
+                    let totalErrors = 0
+                    const moveResults = []
+                    
+                    for (const [teamName, teamData] of teamsWithChannels) {
+                        const targetChannel = i.guild.channels.cache.get(teamData.voiceChannelId)
+                        
+                        if (!targetChannel) {
+                            moveResults.push(`❌ ${teamName}: 채널을 찾을 수 없음`)
+                            continue
+                        }
+                        
+                        let teamMoved = 0
+                        let teamErrors = 0
+                        
+                        for (const memberId of teamData.members) {
+                            try {
+                                const member = await i.guild.members.fetch(memberId)
+                                if (member && member.voice && member.voice.channel) {
+                                    await member.voice.setChannel(targetChannel)
+                                    teamMoved++
+                                    totalMoved++
+                                }
+                            } catch (error) {
+                                teamErrors++
+                                totalErrors++
+                                console.error(`Failed to move member ${memberId} from team ${teamName}:`, error)
+                            }
+                        }
+                        
+                        if (teamMoved > 0 || teamErrors > 0) {
+                            moveResults.push(`${teamMoved > 0 ? '✅' : '⚠️'} ${teamName}: ${teamMoved}명 이동, ${teamErrors}명 실패`)
+                        }
+                    }
+                    
+                    const embed = new EmbedBuilder()
+                        .setColor(totalMoved > 0 ? 0x00ff00 : 0xff0000)
+                        .setTitle('🚀 모든 팀 이동 결과')
+                        .setDescription('모든 팀의 멤버 이동이 완료되었습니다.')
+                        .addFields(
+                            { name: '📊 전체 결과', value: `이동 완료: ${totalMoved}명\n이동 실패: ${totalErrors}명`, inline: true },
+                            { name: '🎯 팀별 상세', value: moveResults.join('\n') || '이동할 멤버가 없습니다.', inline: false }
+                        )
+                    
+                    await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
+                    
+                } else if (i.customId === 'move_single_team') {
+                    const embed = new EmbedBuilder()
+                        .setColor(0x426cf5)
+                        .setTitle('👤 개별 팀 이동')
+                        .setDescription('이동할 팀을 선택하세요.')
+                    const teamSelect = createTeamSelectMenu(currentTeams, 'move_team_select', '이동할 팀 선택')
+                    const backButton = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('team_movement')
+                                .setLabel('🔙 팀 이동으로')
+                                .setStyle(ButtonStyle.Secondary)
+                        )
+                    await i.editReply({ embeds: [embed], components: [teamSelect, backButton] })
                     
                 // === 점수 관리 ===
                 } else if (i.customId === 'score_change') {
