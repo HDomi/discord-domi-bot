@@ -22,7 +22,11 @@ async function getLeagueData(guildId) {
     if (snapshot.exists()) {
         const teamsData = snapshot.val();
         return new Map(Object.entries(teamsData).map(([teamName, teamData]) => {
-            return [teamName, { ...teamData, members: new Set(teamData.members || []) }];
+            return [teamName, { 
+                ...teamData, 
+                members: new Set(teamData.members || []),
+                captain: teamData.captain || null // 팀장 필드 추가
+            }];
         }));
     }
     return new Map();
@@ -257,6 +261,7 @@ function createTeamEditEmbed(teamName, teams) {
 
     const memberList = Array.from(teamData.members).map(userId => `<@${userId}>`).join(', ') || '없음'
     const voiceChannel = teamData.voiceChannelId ? `<#${teamData.voiceChannelId}>` : '설정 안됨'
+    const captain = teamData.captain ? `<@${teamData.captain}>` : '설정 안됨'
 
     return new EmbedBuilder()
         .setColor(0x426cf5)
@@ -264,6 +269,7 @@ function createTeamEditEmbed(teamName, teams) {
         .setDescription('수정할 항목을 선택하세요.')
         .addFields(
             { name: '현재 점수', value: `${teamData.score}점` },
+            { name: '현재 팀장', value: captain },
             { name: '현재 멤버', value: memberList },
             { name: '현재 음성채널', value: voiceChannel }
         )
@@ -281,6 +287,10 @@ function createTeamEditButtons(teamName) {
             new ButtonBuilder()
                 .setCustomId(`edit_name_${teamName}`)
                 .setLabel('이름 변경')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId(`set_captain_${teamName}`)
+                .setLabel('팀장 설정')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId(`manage_members_${teamName}`)
@@ -317,7 +327,9 @@ function createTeamListEmbed(teams) {
     teams.forEach((teamData, teamName) => {
         const memberList = Array.from(teamData.members).map(userId => `<@${userId}>`).join(', ')
         const voiceChannel = teamData.voiceChannelId ? `<#${teamData.voiceChannelId}>` : '설정 안됨'
+        const captain = teamData.captain ? `<@${teamData.captain}>` : '설정 안됨'
         description += `**${teamName}** (점수: ${teamData.score})\n`
+        description += `팀장: ${captain}\n`
         description += `멤버: ${memberList || '없음'}\n`
         description += `음성채널: ${voiceChannel}\n\n`
     })
@@ -330,6 +342,7 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('리그')
         .setDescription('리그용 커맨드입니다.'),
+    banpickSessions, // 밴픽 세션 데이터 export
     async execute(interaction) {
         if (!interaction.guild) {
             const embed = new EmbedBuilder()
@@ -423,11 +436,18 @@ module.exports = {
                     await i.editReply({ embeds: [embed], components: [backButton] })
                     
                 } else if (i.customId === 'banpick_setup') {
-                    if (currentTeams.size < 2) {
+                    // 팀장이 설정된 팀이 최소 2개 있는지 확인
+                    const teamsWithCaptains = Array.from(currentTeams.entries()).filter(([teamName, teamData]) => teamData.captain)
+                    
+                    if (teamsWithCaptains.length < 2) {
                         const embed = new EmbedBuilder()
                             .setColor(0xff0000)
                             .setTitle('⚠️ 오류')
-                            .setDescription('밴픽 설정을 위해서는 최소 2개의 팀이 필요합니다.')
+                            .setDescription('밴픽 설정을 위해서는 팀장이 설정된 팀이 최소 2개 필요합니다.')
+                            .addFields(
+                                { name: '현재 상태', value: `팀장이 설정된 팀: ${teamsWithCaptains.length}개` },
+                                { name: '해결 방법', value: '팀 관리 → 팀 편집 → 팀장 설정을 통해 각 팀의 팀장을 먼저 설정해주세요.' }
+                            )
                         await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
                         return
                     }
@@ -435,26 +455,27 @@ module.exports = {
                     const embed = new EmbedBuilder()
                         .setColor(0x426cf5)
                         .setTitle('⚔️ 밴픽 설정')
-                        .setDescription('각 팀의 대표 선수를 비공개로 선택합니다.')
+                        .setDescription('대결할 2개 팀을 선택하여 밴픽을 진행합니다.')
                         .addFields(
-                            { name: '📝 진행 방법', value: '• 아래 드롭다운에서 자신을 선택하여 밴픽 담당자로 등록하세요\n• 각 팀에서 먼저 선택한 1명씩, 총 2명이 담당자가 됩니다\n• 선택 과정은 완전히 비공개로 진행됩니다' },
-                            { name: '⚠️ 주의사항', value: '• 팀에 속하지 않은 멤버는 선택할 수 없습니다\n• 같은 팀에서 여러 명이 선택해도 첫 번째만 인정됩니다' }
+                            { name: '📝 진행 방법', value: '• 아래에서 대결할 2개 팀을 선택하세요\n• 각 팀장에게 개인 메시지(DM)로 밴픽 요청이 발송됩니다\n• 팀장들이 DM에서 밴픽을 입력하면 결과가 공개됩니다' },
+                            { name: '⚠️ 주의사항', value: '• 팀장이 설정되지 않은 팀은 선택할 수 없습니다\n• 팀장이 DM을 받을 수 있는 상태여야 합니다' }
                         )
-                        .setFooter({ text: '대기 중... (0/2명)' })
                     
-                    // 모든 팀원들을 드롭다운 옵션으로 생성
-                    const allMembers = new Set()
-                    currentTeams.forEach(teamData => {
-                        teamData.members.forEach(memberId => allMembers.add(memberId))
-                    })
+                    // 팀장이 있는 팀들만 선택 옵션으로 제공
+                    const teamOptions = teamsWithCaptains.map(([teamName, teamData]) => ({
+                        label: teamName,
+                        value: teamName,
+                        description: `팀장: ${interaction.guild.members.cache.get(teamData.captain)?.displayName || '알 수 없음'}`
+                    }))
                     
-                    const banpickSelect = new ActionRowBuilder()
+                    const teamSelect = new ActionRowBuilder()
                         .addComponents(
-                            new UserSelectMenuBuilder()
-                                .setCustomId('banpick_user_select')
-                                .setPlaceholder('자신을 선택하여 밴픽 담당자로 등록')
-                                .setMinValues(1)
-                                .setMaxValues(1)
+                            new StringSelectMenuBuilder()
+                                .setCustomId('banpick_team_select')
+                                .setPlaceholder('대결할 2개 팀 선택')
+                                .addOptions(teamOptions)
+                                .setMinValues(2)
+                                .setMaxValues(2)
                         )
                     
                     const cancelButton = new ActionRowBuilder()
@@ -469,14 +490,7 @@ module.exports = {
                                 .setStyle(ButtonStyle.Secondary)
                         )
                     
-                    await i.editReply({ embeds: [embed], components: [banpickSelect, cancelButton] })
-                    
-                    // 밴픽 세션 초기화
-                    banpickSessions.set(i.guild.id, {
-                        users: new Map(), // userId -> { teamName, username }
-                        usedTeams: new Set(), // 이미 대표자가 정해진 팀들
-                        isActive: true
-                    })
+                    await i.editReply({ embeds: [embed], components: [teamSelect, cancelButton] })
                     
                 } else if (i.customId === 'cancel_banpick_setup') {
                     // 밴픽 세션 정리
@@ -533,7 +547,7 @@ module.exports = {
                         }
 
                         // 팀 생성
-                        const newTeamData = { members: new Set(), score: 0, voiceChannelId: null }
+                        const newTeamData = { members: new Set(), score: 0, voiceChannelId: null, captain: null }
                         await setTeamData(i.guild.id, teamName, newTeamData)
 
                         const successEmbed = new EmbedBuilder()
@@ -821,6 +835,50 @@ module.exports = {
                     
                     await i.editReply({ embeds: [embed], components })
                     
+                } else if (i.customId.startsWith('set_captain_')) {
+                    const teamName = i.customId.replace('set_captain_', '')
+                    const teamData = currentTeams.get(teamName)
+                    
+                    if (teamData.members.size === 0) {
+                        await i.followUp({ content: '⚠️ 팀에 멤버가 없어 팀장을 설정할 수 없습니다.', ephemeral: true })
+                        return
+                    }
+                    
+                    const memberOptions = Array.from(teamData.members).map(memberId => {
+                        const member = interaction.guild.members.cache.get(memberId)
+                        return {
+                            label: member?.displayName || member?.user.username || memberId,
+                            value: memberId,
+                            description: teamData.captain === memberId ? '현재 팀장' : ''
+                        }
+                    })
+                    
+                    const captainSelect = new ActionRowBuilder()
+                        .addComponents(
+                            new StringSelectMenuBuilder()
+                                .setCustomId(`select_captain_${teamName}`)
+                                .setPlaceholder('팀장으로 설정할 멤버 선택')
+                                .addOptions(memberOptions)
+                        )
+                    
+                    const backButton = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('team_management')
+                                .setLabel('🔙 팀 관리로')
+                                .setStyle(ButtonStyle.Secondary)
+                        )
+                    
+                    const embed = new EmbedBuilder()
+                        .setColor(0x426cf5)
+                        .setTitle(`👑 "${teamName}" 팀장 설정`)
+                        .setDescription('팀장으로 설정할 멤버를 선택하세요.')
+                        .addFields(
+                            { name: '현재 팀장', value: teamData.captain ? `<@${teamData.captain}>` : '설정 안됨' }
+                        )
+                    
+                    await i.editReply({ embeds: [embed], components: [captainSelect, backButton] })
+                    
                 } else if (i.customId.startsWith('edit_channel_')) {
                     const teamName = i.customId.replace('edit_channel_', '')
                     const channelSelect = new ActionRowBuilder()
@@ -984,141 +1042,103 @@ module.exports = {
                             .setTitle('✅ 멤버 제외 완료')
                             .setDescription(`"${teamName}" 팀에서 ${i.values.length}명의 멤버가 제외되었습니다.`)
                         await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        
+                    } else if (i.customId.startsWith('select_captain_')) {
+                        const teamName = i.customId.replace('select_captain_', '')
+                        const selectedUserId = i.values[0]
+                        const teamData = currentTeams.get(teamName)
+                        
+                        teamData.captain = selectedUserId
+                        await setTeamData(i.guild.id, teamName, teamData)
+                        
+                        const embed = new EmbedBuilder()
+                            .setColor(0x00ff00)
+                            .setTitle('✅ 팀장 설정 완료')
+                            .setDescription(`"${teamName}" 팀의 팀장이 설정되었습니다.`)
+                            .addFields(
+                                { name: '새 팀장', value: `<@${selectedUserId}>` }
+                            )
+                        await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        
+                    } else if (i.customId === 'banpick_team_select') {
+                        const selectedTeams = i.values
+                        const team1Name = selectedTeams[0]
+                        const team2Name = selectedTeams[1]
+                        const team1Data = currentTeams.get(team1Name)
+                        const team2Data = currentTeams.get(team2Name)
+                        
+                        const embed = new EmbedBuilder()
+                            .setColor(0xffaa00)
+                            .setTitle('⚔️ 밴픽 진행 중...')
+                            .setDescription('각 팀장에게 개인 메시지를 발송하고 있습니다.')
+                            .addFields(
+                                { name: '대결 팀', value: `**${team1Name}** vs **${team2Name}**` },
+                                { name: '상태', value: '팀장들에게 DM 발송 중...' }
+                            )
+                        
+                        await i.editReply({ embeds: [embed], components: [] })
+                        
+                        // 밴픽 세션 초기화
+                        banpickSessions.set(i.guild.id, {
+                            teams: { [team1Name]: team1Data, [team2Name]: team2Data },
+                            banpicks: new Map(), // teamName -> banpick
+                            isActive: true,
+                            channelId: interaction.channelId,
+                            originalInteraction: interaction
+                        })
+                        
+                        // 각 팀장에게 DM 발송
+                        try {
+                            const captain1 = await i.guild.members.fetch(team1Data.captain)
+                            const captain2 = await i.guild.members.fetch(team2Data.captain)
+                            
+                            const dmEmbed = new EmbedBuilder()
+                                .setColor(0x426cf5)
+                                .setTitle('⚔️ 밴픽 요청')
+                                .setDescription(`**${team1Name}** vs **${team2Name}** 대결에서 밴픽을 입력해주세요.`)
+                                .addFields(
+                                    { name: '📝 입력 방법', value: '이 DM에 밴픽할 내용을 채팅으로 입력하세요.\n(예: "바드", "야스오", "챔피언명" 등)' },
+                                    { name: '⚠️ 주의사항', value: '• 상대방은 당신의 밴픽을 볼 수 없습니다\n• 먼저 입력하는 2명의 밴픽이 채택됩니다' }
+                                )
+                                .setFooter({ text: `당신의 팀: ${team1Data.captain === captain1.id ? team1Name : team2Name}` })
+                            
+                            await captain1.send({ embeds: [dmEmbed] })
+                            await captain2.send({ 
+                                embeds: [dmEmbed.setFooter({ text: `당신의 팀: ${team2Data.captain === captain2.id ? team2Name : team1Name}` })] 
+                            })
+                            
+                            // 상태 업데이트
+                            const progressEmbed = new EmbedBuilder()
+                                .setColor(0x426cf5)
+                                .setTitle('⚔️ 밴픽 대기 중')
+                                .setDescription('팀장들이 개인 메시지에서 밴픽을 입력하고 있습니다.')
+                                .addFields(
+                                    { name: '대결 팀', value: `**${team1Name}** vs **${team2Name}**` },
+                                    { name: '진행 상태', value: `📤 DM 발송 완료\n⏳ 밴픽 입력 대기 중... (0/2)` }
+                                )
+                                .setFooter({ text: '각 팀장은 개인 메시지에서 밴픽을 입력해주세요.' })
+                            
+                            await interaction.editReply({ embeds: [progressEmbed], components: [] })
+                            
+                        } catch (error) {
+                            console.error('Failed to send DM to captains:', error)
+                            
+                            const errorEmbed = new EmbedBuilder()
+                                .setColor(0xff0000)
+                                .setTitle('❌ DM 발송 실패')
+                                .setDescription('팀장들에게 개인 메시지를 발송하는데 실패했습니다.')
+                                .addFields(
+                                    { name: '가능한 원인', value: '• 팀장이 DM을 받지 않도록 설정했을 수 있습니다\n• 봇과 공통 서버가 없을 수 있습니다' },
+                                    { name: '해결 방법', value: '팀장들에게 DM 설정을 확인하도록 요청해주세요.' }
+                                )
+                            
+                            await interaction.editReply({ embeds: [errorEmbed], components: [createMainMenuButtons()] })
+                            banpickSessions.delete(i.guild.id)
+                        }
                     }
                     
                 // === 사용자 선택 메뉴 처리 ===
                 } else if (i.isUserSelectMenu()) {
-                    // 밴픽 설정 처리
-                    if (i.customId === 'banpick_user_select') {
-                        const banpickSession = banpickSessions.get(i.guild.id)
-                        
-                        if (!banpickSession || !banpickSession.isActive) {
-                            await i.followUp({ content: '⚠️ 밴픽 설정이 활성화되지 않았습니다.', ephemeral: true })
-                            return
-                        }
-                        
-                        const selectedUserId = i.values[0]
-                        
-                        // 선택한 사용자가 팀에 속하는지 확인
-                        let userTeam = null
-                        for (const [teamName, teamData] of currentTeams) {
-                            if (teamData.members.has(selectedUserId)) {
-                                userTeam = teamName
-                                break
-                            }
-                        }
-                        
-                        if (!userTeam) {
-                            await i.followUp({ content: '⚠️ 선택한 사용자가 어떤 팀에도 속하지 않습니다.', ephemeral: true })
-                            return
-                        }
-                        
-                        // 이미 해당 팀의 대표자가 정해졌는지 확인
-                        if (banpickSession.usedTeams.has(userTeam)) {
-                            await i.followUp({ content: `⚠️ "${userTeam}" 팀의 밴픽 담당자가 이미 선정되었습니다.`, ephemeral: true })
-                            return
-                        }
-                        
-                        // 밴픽 담당자로 등록
-                        const selectedUser = await i.guild.members.fetch(selectedUserId)
-                        banpickSession.users.set(selectedUserId, {
-                            teamName: userTeam,
-                            username: selectedUser.displayName || selectedUser.user.username
-                        })
-                        banpickSession.usedTeams.add(userTeam)
-                        
-                        // 진행 상황 업데이트
-                        const updatedEmbed = new EmbedBuilder()
-                            .setColor(0x426cf5)
-                            .setTitle('⚔️ 밴픽 설정')
-                            .setDescription('각 팀의 대표 선수를 비공개로 선택합니다.')
-                            .addFields(
-                                { name: '📝 진행 방법', value: '• 아래 드롭다운에서 자신을 선택하여 밴픽 담당자로 등록하세요\n• 각 팀에서 먼저 선택한 1명씩, 총 2명이 담당자가 됩니다\n• 선택 과정은 완전히 비공개로 진행됩니다' },
-                                { name: '⚠️ 주의사항', value: '• 팀에 속하지 않은 멤버는 선택할 수 없습니다\n• 같은 팀에서 여러 명이 선택해도 첫 번째만 인정됩니다' },
-                                { name: '✅ 등록된 대표자', value: Array.from(banpickSession.users.values()).map(user => `**${user.teamName}**: ${user.username}`).join('\n') || '없음' }
-                            )
-                            .setFooter({ text: `대기 중... (${banpickSession.users.size}/2명)` })
-                        
-                        const banpickSelect = new ActionRowBuilder()
-                            .addComponents(
-                                new UserSelectMenuBuilder()
-                                    .setCustomId('banpick_user_select')
-                                    .setPlaceholder('자신을 선택하여 밴픽 담당자로 등록')
-                                    .setMinValues(1)
-                                    .setMaxValues(1)
-                            )
-                        
-                        const cancelButton = new ActionRowBuilder()
-                            .addComponents(
-                                new ButtonBuilder()
-                                    .setCustomId('cancel_banpick_setup')
-                                    .setLabel('❌ 취소')
-                                    .setStyle(ButtonStyle.Danger),
-                                new ButtonBuilder()
-                                    .setCustomId('back_to_main')
-                                    .setLabel('🔙 메인으로')
-                                    .setStyle(ButtonStyle.Secondary)
-                            )
-                        
-                        await i.editReply({ embeds: [updatedEmbed], components: [banpickSelect, cancelButton] })
-                        
-                        // 개인에게만 보이는 확인 메시지
-                        await i.followUp({ 
-                            content: `✅ "${userTeam}" 팀의 밴픽 담당자로 등록되었습니다!`, 
-                            ephemeral: true 
-                        })
-                        
-                        // 2명이 모두 등록되면 3초 카운트다운 시작
-                        if (banpickSession.users.size === 2) {
-                            banpickSession.isActive = false // 더 이상 선택 불가
-                            
-                            // 3초 카운트다운
-                            for (let countdown = 3; countdown > 0; countdown--) {
-                                const countdownEmbed = new EmbedBuilder()
-                                    .setColor(0xffaa00)
-                                    .setTitle('⚔️ 밴픽 설정 완료!')
-                                    .setDescription(`밴픽 담당자가 설정되었습니다. ${countdown}초 후 결과를 표시합니다...`)
-                                    .addFields(
-                                        { name: '✅ 밴픽 담당자', value: Array.from(banpickSession.users.values()).map(user => `**${user.teamName}**: ${user.username}`).join('\n') }
-                                    )
-                                
-                                await i.editReply({ embeds: [countdownEmbed], components: [] })
-                                await new Promise(resolve => setTimeout(resolve, 1000))
-                            }
-                            
-                            // 최종 결과 표시
-                            const finalEmbed = new EmbedBuilder()
-                                .setColor(0x00ff00)
-                                .setTitle('🎉 밴픽 설정 완료!')
-                                .setDescription('밴픽 담당자가 성공적으로 설정되었습니다.')
-                                .addFields(
-                                    { 
-                                        name: '⚔️ 밴픽 담당자', 
-                                        value: Array.from(banpickSession.users.entries()).map(([userId, user]) => 
-                                            `**${user.teamName}**: <@${userId}> (${user.username})`
-                                        ).join('\n') 
-                                    },
-                                    { name: '📋 안내', value: '이제 설정된 담당자들이 밴픽을 진행할 수 있습니다.' }
-                                )
-                                .setTimestamp()
-                            
-                            const backButton = new ActionRowBuilder()
-                                .addComponents(
-                                    new ButtonBuilder()
-                                        .setCustomId('back_to_main')
-                                        .setLabel('🔙 메인으로')
-                                        .setStyle(ButtonStyle.Secondary)
-                                )
-                            
-                            await i.editReply({ embeds: [finalEmbed], components: [backButton] })
-                            
-                            // 세션 정리
-                            banpickSessions.delete(i.guild.id)
-                        }
-                        
-                        return
-                    }
-                    
                     // 팀 멤버 관리 처리
                     const teamName = i.customId.startsWith('add_members_after_create_') 
                         ? i.customId.replace('add_members_after_create_', '') 
