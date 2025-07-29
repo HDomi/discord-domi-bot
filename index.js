@@ -13,10 +13,11 @@ const clientId = process.env.CLIENT_ID;
 const rest = new REST({ version: '10' }).setToken(token);
 
 const client = new Client({ intents: [
-    GatewayIntentBits.Guilds, 
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers, // 멤버 정보 접근을 위해 추가
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates
 ]});
 
 client.once(Events.ClientReady, readyClient => {
