@@ -8,6 +8,9 @@ const firebaseConfig = require('../config/firebaseConfig');
 const firebaseApp = initializeApp(firebaseConfig);
 const database = getDatabase(firebaseApp);
 
+// 밴픽 설정 상태 관리 (메모리에 임시 저장)
+const banpickSessions = new Map(); // guildId -> { users: Map, usedTeams: Set, isActive: boolean }
+
 /**
  * 길드의 리그 데이터를 Firebase에서 가져오는 함수
  * @param {string} guildId - 길드 ID
@@ -83,6 +86,7 @@ function createMainMenuEmbed(guildName) {
             { name: '👥 팀 관리', value: '팀 생성, 편집, 삭제, 초기화', inline: true },
             { name: '📊 점수 관리', value: '점수 추가, 차감', inline: true },
             { name: '🔊 팀 이동', value: '음성채널로 팀 이동', inline: true },
+            { name: '⚔️ 밴픽설정', value: '대표 선수 밴픽 설정', inline: true },
             { name: '📋 팀 목록', value: '모든 팀 정보 확인', inline: true }
         )
         .setTimestamp()
@@ -106,6 +110,10 @@ function createMainMenuButtons() {
             new ButtonBuilder()
                 .setCustomId('team_movement')
                 .setLabel('🔊 팀 이동')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('banpick_setup')
+                .setLabel('⚔️ 밴픽설정')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId('team_list')
@@ -412,6 +420,81 @@ module.exports = {
                                 .setLabel('🔙 메인으로')
                                 .setStyle(ButtonStyle.Secondary)
                         )
+                    await i.editReply({ embeds: [embed], components: [backButton] })
+                    
+                } else if (i.customId === 'banpick_setup') {
+                    if (currentTeams.size < 2) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('⚠️ 오류')
+                            .setDescription('밴픽 설정을 위해서는 최소 2개의 팀이 필요합니다.')
+                        await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
+                        return
+                    }
+                    
+                    const embed = new EmbedBuilder()
+                        .setColor(0x426cf5)
+                        .setTitle('⚔️ 밴픽 설정')
+                        .setDescription('각 팀의 대표 선수를 비공개로 선택합니다.')
+                        .addFields(
+                            { name: '📝 진행 방법', value: '• 아래 드롭다운에서 자신을 선택하여 밴픽 담당자로 등록하세요\n• 각 팀에서 먼저 선택한 1명씩, 총 2명이 담당자가 됩니다\n• 선택 과정은 완전히 비공개로 진행됩니다' },
+                            { name: '⚠️ 주의사항', value: '• 팀에 속하지 않은 멤버는 선택할 수 없습니다\n• 같은 팀에서 여러 명이 선택해도 첫 번째만 인정됩니다' }
+                        )
+                        .setFooter({ text: '대기 중... (0/2명)' })
+                    
+                    // 모든 팀원들을 드롭다운 옵션으로 생성
+                    const allMembers = new Set()
+                    currentTeams.forEach(teamData => {
+                        teamData.members.forEach(memberId => allMembers.add(memberId))
+                    })
+                    
+                    const banpickSelect = new ActionRowBuilder()
+                        .addComponents(
+                            new UserSelectMenuBuilder()
+                                .setCustomId('banpick_user_select')
+                                .setPlaceholder('자신을 선택하여 밴픽 담당자로 등록')
+                                .setMinValues(1)
+                                .setMaxValues(1)
+                        )
+                    
+                    const cancelButton = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('cancel_banpick_setup')
+                                .setLabel('❌ 취소')
+                                .setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_main')
+                                .setLabel('🔙 메인으로')
+                                .setStyle(ButtonStyle.Secondary)
+                        )
+                    
+                    await i.editReply({ embeds: [embed], components: [banpickSelect, cancelButton] })
+                    
+                    // 밴픽 세션 초기화
+                    banpickSessions.set(i.guild.id, {
+                        users: new Map(), // userId -> { teamName, username }
+                        usedTeams: new Set(), // 이미 대표자가 정해진 팀들
+                        isActive: true
+                    })
+                    
+                } else if (i.customId === 'cancel_banpick_setup') {
+                    // 밴픽 세션 정리
+                    banpickSessions.delete(i.guild.id)
+                    
+                    const embed = new EmbedBuilder()
+                        .setColor(0xff0000)
+                        .setTitle('❌ 밴픽 설정 취소')
+                        .setDescription('밴픽 설정이 취소되었습니다.')
+                    
+                    const backButton = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('back_to_main')
+                                .setLabel('🔙 메인으로')
+                                .setStyle(ButtonStyle.Secondary)
+                        )
+                    
                     await i.editReply({ embeds: [embed], components: [backButton] })
                     
                 } else if (i.customId === 'back_to_main') {
@@ -905,6 +988,138 @@ module.exports = {
                     
                 // === 사용자 선택 메뉴 처리 ===
                 } else if (i.isUserSelectMenu()) {
+                    // 밴픽 설정 처리
+                    if (i.customId === 'banpick_user_select') {
+                        const banpickSession = banpickSessions.get(i.guild.id)
+                        
+                        if (!banpickSession || !banpickSession.isActive) {
+                            await i.followUp({ content: '⚠️ 밴픽 설정이 활성화되지 않았습니다.', ephemeral: true })
+                            return
+                        }
+                        
+                        const selectedUserId = i.values[0]
+                        
+                        // 선택한 사용자가 팀에 속하는지 확인
+                        let userTeam = null
+                        for (const [teamName, teamData] of currentTeams) {
+                            if (teamData.members.has(selectedUserId)) {
+                                userTeam = teamName
+                                break
+                            }
+                        }
+                        
+                        if (!userTeam) {
+                            await i.followUp({ content: '⚠️ 선택한 사용자가 어떤 팀에도 속하지 않습니다.', ephemeral: true })
+                            return
+                        }
+                        
+                        // 이미 해당 팀의 대표자가 정해졌는지 확인
+                        if (banpickSession.usedTeams.has(userTeam)) {
+                            await i.followUp({ content: `⚠️ "${userTeam}" 팀의 밴픽 담당자가 이미 선정되었습니다.`, ephemeral: true })
+                            return
+                        }
+                        
+                        // 밴픽 담당자로 등록
+                        const selectedUser = await i.guild.members.fetch(selectedUserId)
+                        banpickSession.users.set(selectedUserId, {
+                            teamName: userTeam,
+                            username: selectedUser.displayName || selectedUser.user.username
+                        })
+                        banpickSession.usedTeams.add(userTeam)
+                        
+                        // 진행 상황 업데이트
+                        const updatedEmbed = new EmbedBuilder()
+                            .setColor(0x426cf5)
+                            .setTitle('⚔️ 밴픽 설정')
+                            .setDescription('각 팀의 대표 선수를 비공개로 선택합니다.')
+                            .addFields(
+                                { name: '📝 진행 방법', value: '• 아래 드롭다운에서 자신을 선택하여 밴픽 담당자로 등록하세요\n• 각 팀에서 먼저 선택한 1명씩, 총 2명이 담당자가 됩니다\n• 선택 과정은 완전히 비공개로 진행됩니다' },
+                                { name: '⚠️ 주의사항', value: '• 팀에 속하지 않은 멤버는 선택할 수 없습니다\n• 같은 팀에서 여러 명이 선택해도 첫 번째만 인정됩니다' },
+                                { name: '✅ 등록된 대표자', value: Array.from(banpickSession.users.values()).map(user => `**${user.teamName}**: ${user.username}`).join('\n') || '없음' }
+                            )
+                            .setFooter({ text: `대기 중... (${banpickSession.users.size}/2명)` })
+                        
+                        const banpickSelect = new ActionRowBuilder()
+                            .addComponents(
+                                new UserSelectMenuBuilder()
+                                    .setCustomId('banpick_user_select')
+                                    .setPlaceholder('자신을 선택하여 밴픽 담당자로 등록')
+                                    .setMinValues(1)
+                                    .setMaxValues(1)
+                            )
+                        
+                        const cancelButton = new ActionRowBuilder()
+                            .addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId('cancel_banpick_setup')
+                                    .setLabel('❌ 취소')
+                                    .setStyle(ButtonStyle.Danger),
+                                new ButtonBuilder()
+                                    .setCustomId('back_to_main')
+                                    .setLabel('🔙 메인으로')
+                                    .setStyle(ButtonStyle.Secondary)
+                            )
+                        
+                        await i.editReply({ embeds: [updatedEmbed], components: [banpickSelect, cancelButton] })
+                        
+                        // 개인에게만 보이는 확인 메시지
+                        await i.followUp({ 
+                            content: `✅ "${userTeam}" 팀의 밴픽 담당자로 등록되었습니다!`, 
+                            ephemeral: true 
+                        })
+                        
+                        // 2명이 모두 등록되면 3초 카운트다운 시작
+                        if (banpickSession.users.size === 2) {
+                            banpickSession.isActive = false // 더 이상 선택 불가
+                            
+                            // 3초 카운트다운
+                            for (let countdown = 3; countdown > 0; countdown--) {
+                                const countdownEmbed = new EmbedBuilder()
+                                    .setColor(0xffaa00)
+                                    .setTitle('⚔️ 밴픽 설정 완료!')
+                                    .setDescription(`밴픽 담당자가 설정되었습니다. ${countdown}초 후 결과를 표시합니다...`)
+                                    .addFields(
+                                        { name: '✅ 밴픽 담당자', value: Array.from(banpickSession.users.values()).map(user => `**${user.teamName}**: ${user.username}`).join('\n') }
+                                    )
+                                
+                                await i.editReply({ embeds: [countdownEmbed], components: [] })
+                                await new Promise(resolve => setTimeout(resolve, 1000))
+                            }
+                            
+                            // 최종 결과 표시
+                            const finalEmbed = new EmbedBuilder()
+                                .setColor(0x00ff00)
+                                .setTitle('🎉 밴픽 설정 완료!')
+                                .setDescription('밴픽 담당자가 성공적으로 설정되었습니다.')
+                                .addFields(
+                                    { 
+                                        name: '⚔️ 밴픽 담당자', 
+                                        value: Array.from(banpickSession.users.entries()).map(([userId, user]) => 
+                                            `**${user.teamName}**: <@${userId}> (${user.username})`
+                                        ).join('\n') 
+                                    },
+                                    { name: '📋 안내', value: '이제 설정된 담당자들이 밴픽을 진행할 수 있습니다.' }
+                                )
+                                .setTimestamp()
+                            
+                            const backButton = new ActionRowBuilder()
+                                .addComponents(
+                                    new ButtonBuilder()
+                                        .setCustomId('back_to_main')
+                                        .setLabel('🔙 메인으로')
+                                        .setStyle(ButtonStyle.Secondary)
+                                )
+                            
+                            await i.editReply({ embeds: [finalEmbed], components: [backButton] })
+                            
+                            // 세션 정리
+                            banpickSessions.delete(i.guild.id)
+                        }
+                        
+                        return
+                    }
+                    
+                    // 팀 멤버 관리 처리
                     const teamName = i.customId.startsWith('add_members_after_create_') 
                         ? i.customId.replace('add_members_after_create_', '') 
                         : i.customId.replace('add_members_', '')
@@ -939,7 +1154,7 @@ module.exports = {
                                         .setStyle(ButtonStyle.Secondary)
                                 )
                             
-                            await i.editReply({ embeds: [embed], components: [channelSelect, skipButton] })
+                            await i.editReply({ embeds: [embed], components: [skipButton, channelSelect] })
                         } else {
                             // 편집 플로우
                             const embed = new EmbedBuilder()
