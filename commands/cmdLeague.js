@@ -9,7 +9,8 @@ const {
     UserSelectMenuBuilder, 
     ChannelSelectMenuBuilder,
     ChannelType,
-    PermissionsBitField 
+    PermissionsBitField,
+    MessageFlags
 } = require('discord.js')
 
 // 리그 데이터 저장용 (메모리 기반)
@@ -237,14 +238,24 @@ module.exports = {
      * @param {import('discord.js').CommandInteraction} interaction - 커맨드 상호작용
      */
     async execute(interaction) {
+        // 서버에서만 실행 가능하도록 체크
+        if (!interaction.guild) {
+            const embed = new EmbedBuilder()
+                .setColor(0xff0000)
+                .setTitle('⚠️ 오류')
+                .setDescription('이 명령어는 서버에서만 사용할 수 있습니다.')
+                .setTimestamp()
+            
+            return await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral })
+        }
+
         const guildData = getLeagueData(interaction.guild.id)
         const embed = createMainMenuEmbed(interaction.guild.name)
         const buttons = createMainMenuButtons()
 
         await interaction.reply({ 
             embeds: [embed], 
-            components: [buttons],
-            ephemeral: false
+            components: [buttons]
         })
 
         // 컴포넌트 상호작용 처리
@@ -255,6 +266,17 @@ module.exports = {
         })
 
         collector.on('collect', async i => {
+            // 서버 및 길드 존재 확인
+            if (!i.guild || !interaction.guild) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xff0000)
+                    .setTitle('⚠️ 오류')
+                    .setDescription('서버 정보를 가져올 수 없습니다.')
+                
+                await i.reply({ embeds: [embed], flags: MessageFlags.Ephemeral })
+                return
+            }
+
             const guildData = getLeagueData(interaction.guild.id)
 
             try {
@@ -603,7 +625,7 @@ module.exports = {
                         }
 
                         // 관리자 권한 확인
-                        if (!i.member.permissions.has(PermissionsBitField.Flags.MoveMembers)) {
+                        if (!i.member || !i.member.permissions.has(PermissionsBitField.Flags.MoveMembers)) {
                             const embed = new EmbedBuilder()
                                 .setColor(0xff0000)
                                 .setTitle('⚠️ 권한 부족')
@@ -631,7 +653,7 @@ module.exports = {
                         for (const memberId of teamData.members) {
                             try {
                                 const member = await i.guild.members.fetch(memberId)
-                                if (member.voice.channel) {
+                                if (member && member.voice && member.voice.channel) {
                                     await member.voice.setChannel(targetChannel)
                                     movedCount++
                                 }
@@ -703,9 +725,9 @@ module.exports = {
                     .setDescription('처리 중 오류가 발생했습니다. 다시 시도해주세요.')
 
                 if (!i.replied && !i.deferred) {
-                    await i.reply({ embeds: [errorEmbed], ephemeral: true })
+                    await i.reply({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral })
                 } else {
-                    await i.followUp({ embeds: [errorEmbed], ephemeral: true })
+                    await i.followUp({ embeds: [errorEmbed], flags: MessageFlags.Ephemeral })
                 }
             }
         })
