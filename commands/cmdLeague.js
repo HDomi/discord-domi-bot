@@ -820,6 +820,11 @@ module.exports = {
                     const teamName = i.customId.replace('manage_members_', '')
                     const teamData = currentTeams.get(teamName)
                     
+                    if (!teamData) {
+                        await i.followUp({ content: `⚠️ 팀 "${teamName}"을 찾을 수 없습니다.`, ephemeral: true })
+                        return
+                    }
+                    
                     const embed = new EmbedBuilder()
                         .setColor(0x426cf5)
                         .setTitle(`👥 "${teamName}" 멤버 관리`)
@@ -868,6 +873,11 @@ module.exports = {
                 } else if (i.customId.startsWith('set_captain_')) {
                     const teamName = i.customId.replace('set_captain_', '')
                     const teamData = currentTeams.get(teamName)
+                    
+                    if (!teamData) {
+                        await i.followUp({ content: `⚠️ 팀 "${teamName}"을 찾을 수 없습니다.`, ephemeral: true })
+                        return
+                    }
                     
                     if (teamData.members.size === 0) {
                         await i.followUp({ content: '⚠️ 팀에 멤버가 없어 팀장을 설정할 수 없습니다.', ephemeral: true })
@@ -1064,6 +1074,11 @@ module.exports = {
                         const teamName = i.customId.replace('remove_members_', '')
                         const teamData = currentTeams.get(teamName)
                         
+                        if (!teamData) {
+                            await i.followUp({ content: `⚠️ 팀 "${teamName}"을 찾을 수 없습니다.`, ephemeral: true })
+                            return
+                        }
+                        
                         i.values.forEach(userId => teamData.members.delete(userId))
                         await setTeamData(i.guild.id, teamName, teamData)
                         
@@ -1076,7 +1091,15 @@ module.exports = {
                     } else if (i.customId.startsWith('select_captain_')) {
                         const teamName = i.customId.replace('select_captain_', '')
                         const selectedUserId = i.values[0]
-                        const teamData = currentTeams.get(teamName)
+                        
+                        // 최신 팀 데이터를 다시 가져옴
+                        const freshTeams = await getLeagueData(i.guild.id)
+                        const teamData = freshTeams.get(teamName)
+                        
+                        if (!teamData) {
+                            await i.followUp({ content: `⚠️ 팀 "${teamName}"을 찾을 수 없습니다.`, ephemeral: true })
+                            return
+                        }
                         
                         teamData.captain = selectedUserId
                         await setTeamData(i.guild.id, teamName, teamData)
@@ -1093,7 +1116,15 @@ module.exports = {
                     } else if (i.customId.startsWith('set_captain_after_create_')) {
                         const teamName = i.customId.replace('set_captain_after_create_', '')
                         const selectedUserId = i.values[0]
-                        const teamData = currentTeams.get(teamName)
+                        
+                        // 최신 팀 데이터를 다시 가져옴
+                        const freshTeams = await getLeagueData(i.guild.id)
+                        const teamData = freshTeams.get(teamName)
+                        
+                        if (!teamData) {
+                            await i.followUp({ content: `⚠️ 팀 "${teamName}"을 찾을 수 없습니다.`, ephemeral: true })
+                            return
+                        }
                         
                         teamData.captain = selectedUserId
                         await setTeamData(i.guild.id, teamName, teamData)
@@ -1212,6 +1243,11 @@ module.exports = {
                     const selectedUsers = i.values
                     const teamData = currentTeams.get(teamName)
                     
+                    if (!teamData) {
+                        await i.followUp({ content: `⚠️ 팀 "${teamName}"을 찾을 수 없습니다.`, ephemeral: true })
+                        return
+                    }
+                    
                     if (teamData) {
                         selectedUsers.forEach(userId => teamData.members.add(userId))
                         await setTeamData(i.guild.id, teamName, teamData)
@@ -1268,6 +1304,11 @@ module.exports = {
                     const teamName = i.customId.replace('set_voice_channel_', '')
                     const selectedChannelId = i.values[0]
                     const teamData = currentTeams.get(teamName)
+                    
+                    if (!teamData) {
+                        await i.followUp({ content: `⚠️ 팀 "${teamName}"을 찾을 수 없습니다.`, ephemeral: true })
+                        return
+                    }
                     
                     if (teamData) {
                         teamData.voiceChannelId = selectedChannelId
