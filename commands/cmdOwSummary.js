@@ -152,9 +152,10 @@ function translateHeroName(heroName) {
  * 플레이어 정보 임베드를 생성하는 함수
  * @param {object} playerData - 플레이어 데이터
  * @param {string} battletag - 원본 배틀태그
+ * @param {boolean} showDetailedStats - 상세 통계 표시 여부
  * @returns {EmbedBuilder} - Discord 임베드
  */
-function createPlayerEmbed(playerData, battletag) {
+function createPlayerEmbed(playerData, battletag, showDetailedStats = false) {
   const summary = playerData.summary
   const stats = playerData.stats
   
@@ -242,25 +243,29 @@ function createPlayerEmbed(playerData, battletag) {
             const heroKorean = translateHeroName(hero.hero)
             const playTime = formatPlayTime(hero.value)
             
-            // 추가 통계 가져오기
-            const elimPerLife = qpData.heroes_comparisons.eliminations_per_life?.values.find(h => h.hero === hero.hero)?.value || 0
-            
-            // 서포터 영웅 목록
-            const supportHeroes = ['ana', 'mercy', 'brigitte', 'juno', 'moira', 'kiriko', 'lucio', 'illari', 'zenyatta']
-            
-            let additionalStats = `목숨당 처치: ${formatNumber(elimPerLife)}`
-            
-            if (supportHeroes.includes(hero.hero)) {
-              // 서포터는 힐량 표시
-              const healingPer10Min = qpData.heroes_comparisons.healing_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
-              additionalStats += `\n   10분당 힐량: ${formatNumber(healingPer10Min)}`
+            if (showDetailedStats) {
+              // 추가 통계 가져오기
+              const elimPerLife = qpData.heroes_comparisons.eliminations_per_life?.values.find(h => h.hero === hero.hero)?.value || 0
+              
+              // 서포터 영웅 목록
+              const supportHeroes = ['ana', 'mercy', 'brigitte', 'juno', 'moira', 'kiriko', 'lucio', 'illari', 'zenyatta']
+              
+              let additionalStats = `목숨당 처치: ${formatNumber(elimPerLife)}`
+              
+              if (supportHeroes.includes(hero.hero)) {
+                // 서포터는 힐량 표시
+                const healingPer10Min = qpData.heroes_comparisons.healing_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
+                additionalStats += `\n   10분당 힐량: ${formatNumber(healingPer10Min)}`
+              } else {
+                // 나머지는 딜량 표시
+                const damagePer10Min = qpData.heroes_comparisons.hero_damage_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
+                additionalStats += `\n   10분당 딜량: ${formatNumber(damagePer10Min)}`
+              }
+              
+              qpInfo += `${index + 1}. **${heroKorean}** (${playTime})\n   ${additionalStats}\n`
             } else {
-              // 나머지는 딜량 표시
-              const damagePer10Min = qpData.heroes_comparisons.hero_damage_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
-              additionalStats += `\n   10분당 딜량: ${formatNumber(damagePer10Min)}`
+              qpInfo += `${index + 1}. **${heroKorean}** (${playTime})\n`
             }
-            
-            qpInfo += `${index + 1}. **${heroKorean}** (${playTime})\n   ${additionalStats}\n`
           })
         }
       }
@@ -299,25 +304,29 @@ function createPlayerEmbed(playerData, battletag) {
             const heroKorean = translateHeroName(hero.hero)
             const playTime = formatPlayTime(hero.value)
             
-            // 추가 통계 가져오기
-            const elimPerLife = compData.heroes_comparisons.eliminations_per_life?.values.find(h => h.hero === hero.hero)?.value || 0
-            
-            // 서포터 영웅 목록
-            const supportHeroes = ['ana', 'mercy', 'brigitte', 'juno', 'moira', 'kiriko', 'lucio', 'illari', 'zenyatta']
-            
-            let additionalStats = `목숨당 처치: ${formatNumber(elimPerLife)}`
-            
-            if (supportHeroes.includes(hero.hero)) {
-              // 서포터는 힐량 표시
-              const healingPer10Min = compData.heroes_comparisons.healing_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
-              additionalStats += `\n   10분당 힐량: ${formatNumber(healingPer10Min)}`
+            if (showDetailedStats) {
+              // 추가 통계 가져오기
+              const elimPerLife = compData.heroes_comparisons.eliminations_per_life?.values.find(h => h.hero === hero.hero)?.value || 0
+              
+              // 서포터 영웅 목록
+              const supportHeroes = ['ana', 'mercy', 'brigitte', 'juno', 'moira', 'kiriko', 'lucio', 'illari', 'zenyatta']
+              
+              let additionalStats = `목숨당 처치: ${formatNumber(elimPerLife)}`
+              
+              if (supportHeroes.includes(hero.hero)) {
+                // 서포터는 힐량 표시
+                const healingPer10Min = compData.heroes_comparisons.healing_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
+                additionalStats += `\n   10분당 힐량: ${formatNumber(healingPer10Min)}`
+              } else {
+                // 나머지는 딜량 표시
+                const damagePer10Min = compData.heroes_comparisons.hero_damage_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
+                additionalStats += `\n   10분당 딜량: ${formatNumber(damagePer10Min)}`
+              }
+              
+              compStatsInfo += `${index + 1}. **${heroKorean}** (${playTime})\n   ${additionalStats}\n`
             } else {
-              // 나머지는 딜량 표시
-              const damagePer10Min = compData.heroes_comparisons.hero_damage_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
-              additionalStats += `\n   10분당 딜량: ${formatNumber(damagePer10Min)}`
+              compStatsInfo += `${index + 1}. **${heroKorean}** (${playTime})\n`
             }
-            
-            compStatsInfo += `${index + 1}. **${heroKorean}** (${playTime})\n   ${additionalStats}\n`
           })
         }
       }
@@ -354,10 +363,17 @@ module.exports = {
         .setName('배틀태그')
         .setDescription('조회할 플레이어의 배틀태그 (예: 플레이어#1234)')
         .setRequired(true)
+    )
+    .addBooleanOption(option =>
+      option
+        .setName('상세통계')
+        .setDescription('모스트 영웅의 상세 통계 표시 여부 (목숨당 처치, 10분당 힐/딜량)')
+        .setRequired(false)
     ),
 
   async execute(interaction) {
     const battletag = interaction.options.getString('배틀태그')
+    const showDetailedStats = interaction.options.getBoolean('상세통계') ?? false
     
     // 배틀태그 형식 검증
     if (!battletag.includes('#')) {
@@ -373,7 +389,7 @@ module.exports = {
     
     try {
       const playerData = await fetchPlayerData(battletag)
-      const embed = createPlayerEmbed(playerData, battletag)
+      const embed = createPlayerEmbed(playerData, battletag, showDetailedStats)
       
       await interaction.editReply({ embeds: [embed] })
       
