@@ -253,11 +253,11 @@ function createPlayerEmbed(playerData, battletag) {
             if (supportHeroes.includes(hero.hero)) {
               // 서포터는 힐량 표시
               const healingPer10Min = qpData.heroes_comparisons.healing_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
-              additionalStats += `, 10분당 힐량: ${formatNumber(healingPer10Min)}`
+              additionalStats += `\n   10분당 힐량: ${formatNumber(healingPer10Min)}`
             } else {
-              // 나머지는 처치량 표시
-              const elimPer10Min = qpData.heroes_comparisons.eliminations_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
-              additionalStats += `, 10분당 처치: ${formatNumber(elimPer10Min)}`
+              // 나머지는 딜량 표시
+              const damagePer10Min = qpData.heroes_comparisons.hero_damage_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
+              additionalStats += `\n   10분당 딜량: ${formatNumber(damagePer10Min)}`
             }
             
             qpInfo += `${index + 1}. **${heroKorean}** (${playTime})\n   ${additionalStats}\n`
@@ -310,11 +310,11 @@ function createPlayerEmbed(playerData, battletag) {
             if (supportHeroes.includes(hero.hero)) {
               // 서포터는 힐량 표시
               const healingPer10Min = compData.heroes_comparisons.healing_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
-              additionalStats += `, 10분당 힐량: ${formatNumber(healingPer10Min)}`
+              additionalStats += `\n   10분당 힐량: ${formatNumber(healingPer10Min)}`
             } else {
-              // 나머지는 처치량 표시
-              const elimPer10Min = compData.heroes_comparisons.eliminations_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
-              additionalStats += `, 10분당 처치: ${formatNumber(elimPer10Min)}`
+              // 나머지는 딜량 표시
+              const damagePer10Min = compData.heroes_comparisons.hero_damage_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
+              additionalStats += `\n   10분당 딜량: ${formatNumber(damagePer10Min)}`
             }
             
             compStatsInfo += `${index + 1}. **${heroKorean}** (${playTime})\n   ${additionalStats}\n`
