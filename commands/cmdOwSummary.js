@@ -126,7 +126,8 @@ function translateHeroName(heroName) {
     'symmetra': '시메트라',
     'echo': '에코',
     'venture': '벤처',
-    'bastion': '바스티온'
+    'bastion': '바스티온',
+    'hazard': '해저드'
   }
   
   return heroMap[heroName] || heroName
@@ -293,7 +294,7 @@ function createPlayerEmbed(playerData, battletag) {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('전적')
+    .setName('옵치전적')
     .setDescription('오버워치 플레이어의 전적을 조회합니다')
     .addStringOption(option =>
       option
