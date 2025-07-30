@@ -82,6 +82,18 @@ function formatPlayTime(seconds) {
 }
 
 /**
+ * 숫자를 적절하게 포맷팅하는 함수
+ * @param {number} num - 포맷팅할 숫자
+ * @returns {string} - 포맷된 숫자 문자열
+ */
+function formatNumber(num) {
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1) + 'k'
+  }
+  return num.toFixed(2)
+}
+
+/**
  * 영웅 이름을 한국어로 변환하는 함수
  * @param {string} heroName - 영어 영웅 이름
  * @returns {string} - 한국어 영웅 이름
@@ -229,7 +241,26 @@ function createPlayerEmbed(playerData, battletag) {
           topHeroes.forEach((hero, index) => {
             const heroKorean = translateHeroName(hero.hero)
             const playTime = formatPlayTime(hero.value)
-            qpInfo += `${index + 1}. ${heroKorean} (${playTime})\n`
+            
+            // 추가 통계 가져오기
+            const elimPerLife = qpData.heroes_comparisons.eliminations_per_life?.values.find(h => h.hero === hero.hero)?.value || 0
+            
+            // 서포터 영웅 목록
+            const supportHeroes = ['ana', 'mercy', 'brigitte', 'juno', 'moira', 'kiriko', 'lucio', 'illari', 'zenyatta']
+            
+            let additionalStats = `목숨당 처치: ${formatNumber(elimPerLife)}`
+            
+            if (supportHeroes.includes(hero.hero)) {
+              // 서포터는 힐량 표시
+              const healingPer10Min = qpData.heroes_comparisons.healing_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
+              additionalStats += `, 10분당 힐량: ${formatNumber(healingPer10Min)}`
+            } else {
+              // 나머지는 처치량 표시
+              const elimPer10Min = qpData.heroes_comparisons.eliminations_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
+              additionalStats += `, 10분당 처치: ${formatNumber(elimPer10Min)}`
+            }
+            
+            qpInfo += `${index + 1}. **${heroKorean}** (${playTime})\n   ${additionalStats}\n`
           })
         }
       }
@@ -267,7 +298,26 @@ function createPlayerEmbed(playerData, battletag) {
           topHeroes.forEach((hero, index) => {
             const heroKorean = translateHeroName(hero.hero)
             const playTime = formatPlayTime(hero.value)
-            compStatsInfo += `${index + 1}. ${heroKorean} (${playTime})\n`
+            
+            // 추가 통계 가져오기
+            const elimPerLife = compData.heroes_comparisons.eliminations_per_life?.values.find(h => h.hero === hero.hero)?.value || 0
+            
+            // 서포터 영웅 목록
+            const supportHeroes = ['ana', 'mercy', 'brigitte', 'juno', 'moira', 'kiriko', 'lucio', 'illari', 'zenyatta']
+            
+            let additionalStats = `목숨당 처치: ${formatNumber(elimPerLife)}`
+            
+            if (supportHeroes.includes(hero.hero)) {
+              // 서포터는 힐량 표시
+              const healingPer10Min = compData.heroes_comparisons.healing_done_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
+              additionalStats += `, 10분당 힐량: ${formatNumber(healingPer10Min)}`
+            } else {
+              // 나머지는 처치량 표시
+              const elimPer10Min = compData.heroes_comparisons.eliminations_avg_per_10_min?.values.find(h => h.hero === hero.hero)?.value || 0
+              additionalStats += `, 10분당 처치: ${formatNumber(elimPer10Min)}`
+            }
+            
+            compStatsInfo += `${index + 1}. **${heroKorean}** (${playTime})\n   ${additionalStats}\n`
           })
         }
       }
