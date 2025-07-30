@@ -644,6 +644,36 @@ module.exports = {
                         .setDescription('모든 팀이 성공적으로 삭제되었습니다.')
                     await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
                     
+                } else if (i.customId.startsWith('skip_captain_')) {
+                    const teamName = i.customId.replace('skip_captain_', '')
+                    
+                    // 팀장 설정을 건너뛰고 음성채널 선택으로 이동
+                    const embed = new EmbedBuilder()
+                        .setColor(0x426cf5)
+                        .setTitle('⏭️ 팀장 건너뛰기')
+                        .setDescription(`이제 팀 "${teamName}"이 사용할 음성채널을 선택해주세요.`)
+                        .addFields(
+                            { name: '팀장 설정', value: '나중에 팀 편집에서 설정할 수 있습니다.' }
+                        )
+                    
+                    const channelSelect = new ActionRowBuilder()
+                        .addComponents(
+                            new ChannelSelectMenuBuilder()
+                                .setCustomId(`set_voice_channel_${teamName}`)
+                                .setPlaceholder('음성채널 선택')
+                                .addChannelTypes(ChannelType.GuildVoice)
+                        )
+                    
+                    const skipButton = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('team_management')
+                                .setLabel('나중에 설정하기')
+                                .setStyle(ButtonStyle.Secondary)
+                        )
+                    
+                    await i.editReply({ embeds: [embed], components: [channelSelect, skipButton] })
+                    
                 // === 팀 이동 처리 ===
                 } else if (i.customId === 'move_all_teams') {
                     if (!i.member.permissions.has(PermissionsBitField.Flags.MoveMembers)) {
@@ -849,7 +879,7 @@ module.exports = {
                         return {
                             label: member?.displayName || member?.user.username || memberId,
                             value: memberId,
-                            description: teamData.captain === memberId ? '현재 팀장' : ''
+                            description: teamData.captain === memberId ? '현재 팀장' : '팀원'
                         }
                     })
                     
@@ -1060,6 +1090,41 @@ module.exports = {
                             )
                         await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
                         
+                    } else if (i.customId.startsWith('set_captain_after_create_')) {
+                        const teamName = i.customId.replace('set_captain_after_create_', '')
+                        const selectedUserId = i.values[0]
+                        const teamData = currentTeams.get(teamName)
+                        
+                        teamData.captain = selectedUserId
+                        await setTeamData(i.guild.id, teamName, teamData)
+                        
+                        // 팀장 설정 후 음성채널 선택으로 이동
+                        const embed = new EmbedBuilder()
+                            .setColor(0x00ff00)
+                            .setTitle('✅ 팀장 설정 완료')
+                            .setDescription(`이제 팀 "${teamName}"이 사용할 음성채널을 선택해주세요.`)
+                            .addFields(
+                                { name: '설정된 팀장', value: `<@${selectedUserId}>` }
+                            )
+                        
+                        const channelSelect = new ActionRowBuilder()
+                            .addComponents(
+                                new ChannelSelectMenuBuilder()
+                                    .setCustomId(`set_voice_channel_${teamName}`)
+                                    .setPlaceholder('음성채널 선택')
+                                    .addChannelTypes(ChannelType.GuildVoice)
+                            )
+                        
+                        const skipButton = new ActionRowBuilder()
+                            .addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId('team_management')
+                                    .setLabel('나중에 설정하기')
+                                    .setStyle(ButtonStyle.Secondary)
+                            )
+                        
+                        await i.editReply({ embeds: [embed], components: [channelSelect, skipButton] })
+                        
                     } else if (i.customId === 'banpick_team_select') {
                         const selectedTeams = i.values
                         const team1Name = selectedTeams[0]
@@ -1152,29 +1217,38 @@ module.exports = {
                         await setTeamData(i.guild.id, teamName, teamData)
                         
                         if (i.customId.startsWith('add_members_after_create_')) {
-                            // 생성 플로우: 음성채널 선택으로 이동
+                            // 생성 플로우: 팀장 선택으로 이동
                             const embed = new EmbedBuilder()
                                 .setColor(0x00ff00)
                                 .setTitle('✅ 팀원 추가 완료')
-                                .setDescription(`이제 팀 "${teamName}"이 사용할 음성채널을 선택해주세요.`)
+                                .setDescription(`이제 팀 "${teamName}"의 팀장을 선택해주세요.`)
                             
-                            const channelSelect = new ActionRowBuilder()
+                            const captainOptions = selectedUsers.map(userId => {
+                                const member = interaction.guild.members.cache.get(userId)
+                                return {
+                                    label: member?.displayName || member?.user.username || userId,
+                                    value: userId,
+                                    description: '팀장 후보'
+                                }
+                            })
+                            
+                            const captainSelect = new ActionRowBuilder()
                                 .addComponents(
-                                    new ChannelSelectMenuBuilder()
-                                        .setCustomId(`set_voice_channel_${teamName}`)
-                                        .setPlaceholder('음성채널 선택')
-                                        .addChannelTypes(ChannelType.GuildVoice)
+                                    new StringSelectMenuBuilder()
+                                        .setCustomId(`set_captain_after_create_${teamName}`)
+                                        .setPlaceholder('팀장 선택')
+                                        .addOptions(captainOptions)
                                 )
                             
                             const skipButton = new ActionRowBuilder()
                                 .addComponents(
                                     new ButtonBuilder()
-                                        .setCustomId('team_management')
-                                        .setLabel('나중에 설정하기')
+                                        .setCustomId(`skip_captain_${teamName}`)
+                                        .setLabel('팀장 나중에 설정')
                                         .setStyle(ButtonStyle.Secondary)
                                 )
                             
-                            await i.editReply({ embeds: [embed], components: [skipButton, channelSelect] })
+                            await i.editReply({ embeds: [embed], components: [captainSelect, skipButton] })
                         } else {
                             // 편집 플로우
                             const embed = new EmbedBuilder()
