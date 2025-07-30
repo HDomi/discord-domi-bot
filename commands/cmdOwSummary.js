@@ -95,10 +95,10 @@ function translateHeroName(heroName) {
     'moira': '모이라',
     'kiriko': '키리코',
     'lucio': '루시우',
-    'illari': '일라리',
+    'illari': '일리아리',
     'zenyatta': '젠야타',
     'soldier-76': '솔저: 76',
-    'cassidy': '캐시디',
+    'cassidy': '캐서디',
     'sojourn': '소전',
     'ashe': '애쉬',
     'mei': '메이',
@@ -127,7 +127,9 @@ function translateHeroName(heroName) {
     'echo': '에코',
     'venture': '벤처',
     'bastion': '바스티온',
-    'hazard': '해저드'
+    'hazard': '해저드',
+    'freya': '프레야',
+    'doomfist': '둠피스트',
   }
   
   return heroMap[heroName] || heroName
