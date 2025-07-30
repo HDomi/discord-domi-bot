@@ -50,7 +50,7 @@ function translateRole(role) {
  * @returns {Promise<object>} - API 응답 데이터
  */
 async function fetchPlayerData(battletag) {
-  const apiUrl = `https://overfast-api.tekrop.fr/players/${formatBattletag(battletag)}/summary`
+  const apiUrl = `https://overfast-api.tekrop.fr/players/${formatBattletag(battletag)}`
   
   try {
     const response = await fetch(apiUrl)
@@ -67,34 +67,114 @@ async function fetchPlayerData(battletag) {
 }
 
 /**
+ * 시간(초)을 시:분 형식으로 변환하는 함수
+ * @param {number} seconds - 초 단위 시간
+ * @returns {string} - 포맷된 시간 문자열
+ */
+function formatPlayTime(seconds) {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  
+  if (hours > 0) {
+    return `${hours}시간 ${minutes}분`
+  }
+  return `${minutes}분`
+}
+
+/**
+ * 영웅 이름을 한국어로 변환하는 함수
+ * @param {string} heroName - 영어 영웅 이름
+ * @returns {string} - 한국어 영웅 이름
+ */
+function translateHeroName(heroName) {
+  const heroMap = {
+    'ana': '아나',
+    'mercy': '메르시',
+    'brigitte': '브리기테',
+    'juno': '주노',
+    'moira': '모이라',
+    'kiriko': '키리코',
+    'lucio': '루시우',
+    'illari': '일라리',
+    'zenyatta': '젠야타',
+    'soldier-76': '솔저: 76',
+    'cassidy': '캐시디',
+    'sojourn': '소전',
+    'ashe': '애쉬',
+    'mei': '메이',
+    'widowmaker': '위도우메이커',
+    'bastion': '바스티온',
+    'reinhardt': '라인하르트',
+    'winston': '윈스턴',
+    'dva': 'D.Va',
+    'sigma': '시그마',
+    'orisa': '오리사',
+    'roadhog': '로드호그',
+    'wrecking-ball': '레킹볼',
+    'zarya': '자리야',
+    'mauga': '마우가',
+    'junker-queen': '정커 퀸',
+    'ramattra': '라마트라',
+    'tracer': '트레이서',
+    'genji': '겐지',
+    'pharah': '파라',
+    'reaper': '리퍼',
+    'sombra': '솜브라',
+    'torbjorn': '토르비욘',
+    'hanzo': '한조',
+    'junkrat': '정크랫',
+    'symmetra': '시메트라',
+    'echo': '에코',
+    'venture': '벤처',
+    'bastion': '바스티온'
+  }
+  
+  return heroMap[heroName] || heroName
+}
+
+/**
  * 플레이어 정보 임베드를 생성하는 함수
  * @param {object} playerData - 플레이어 데이터
  * @param {string} battletag - 원본 배틀태그
  * @returns {EmbedBuilder} - Discord 임베드
  */
 function createPlayerEmbed(playerData, battletag) {
+  const summary = playerData.summary
+  const stats = playerData.stats
+  
   const embed = new EmbedBuilder()
     .setColor(0xf99e1a)
-    .setTitle(`🎮 ${playerData.username}의 오버워치 전적`)
-    .setDescription(`배틀태그: **${battletag}**`)
-    .setThumbnail(playerData.avatar)
+    .setTitle(`🎮 ${summary.username}의 오버워치 전적`)
+    .setThumbnail(summary.avatar)
     .setTimestamp()
   
-  // 추천 레벨 정보
-  if (playerData.endorsement) {
-    embed.addFields({
-      name: '👍 추천 레벨',
-      value: `${playerData.endorsement.level}레벨`,
-      inline: true
-    })
+  // 기본 정보 섹션
+  let basicInfo = `**배틀태그**: ${battletag}\n`
+  
+  if (summary.title) {
+    basicInfo += `**칭호**: ${summary.title}\n`
   }
   
-  // 경쟁전 정보
-  if (playerData.competitive && playerData.competitive.pc) {
-    const comp = playerData.competitive.pc
+  if (summary.endorsement) {
+    basicInfo += `**추천 레벨**: ${summary.endorsement.level}레벨\n`
+  }
+  
+  if (summary.last_updated_at) {
+    const lastUpdate = new Date(summary.last_updated_at * 1000)
+    basicInfo += `**마지막 업데이트**: ${lastUpdate.toLocaleDateString('ko-KR')}`
+  }
+  
+  embed.addFields({
+    name: '📋 기본 정보',
+    value: basicInfo,
+    inline: false
+  })
+  
+  // 경쟁전 티어 정보
+  if (summary.competitive && summary.competitive.pc) {
+    const comp = summary.competitive.pc
     let compInfo = ''
     
-    // 각 역할별 티어 정보
     const roles = ['tank', 'damage', 'support']
     
     roles.forEach(role => {
@@ -107,26 +187,100 @@ function createPlayerEmbed(playerData, battletag) {
     })
     
     if (compInfo) {
+      if (comp.season) {
+        compInfo += `\n**시즌**: ${comp.season}`
+      }
+      
       embed.addFields({
         name: '🏆 경쟁전 티어',
         value: compInfo,
         inline: false
       })
     }
+  }
+  
+  // PC 통계가 있는 경우에만 표시
+  if (stats && stats.pc) {
+    // 빠른대전 정보
+    if (stats.pc.quickplay) {
+      const qpData = stats.pc.quickplay
+      let qpInfo = ''
+      
+      // 총 플레이 시간
+      if (qpData.career_stats && qpData.career_stats['all-heroes']) {
+        const gameStats = qpData.career_stats['all-heroes'].find(cat => cat.category === 'game')
+        if (gameStats) {
+          const timePlayedStat = gameStats.stats.find(stat => stat.key === 'time_played')
+          if (timePlayedStat) {
+            qpInfo += `**총 플레이 시간**: ${formatPlayTime(timePlayedStat.value)}\n`
+          }
+        }
+      }
+      
+      // 모스트 3영웅 (플레이 시간 기준)
+      if (qpData.heroes_comparisons && qpData.heroes_comparisons.time_played) {
+        const topHeroes = qpData.heroes_comparisons.time_played.values.slice(0, 3)
+        if (topHeroes.length > 0) {
+          qpInfo += `**모스트 영웅**:\n`
+          topHeroes.forEach((hero, index) => {
+            const heroKorean = translateHeroName(hero.hero)
+            const playTime = formatPlayTime(hero.value)
+            qpInfo += `${index + 1}. ${heroKorean} (${playTime})\n`
+          })
+        }
+      }
+      
+      if (qpInfo) {
+        embed.addFields({
+          name: '🎯 빠른대전',
+          value: qpInfo,
+          inline: true
+        })
+      }
+    }
     
-    // 시즌 정보
-    if (comp.season) {
-      embed.addFields({
-        name: '📅 시즌',
-        value: `시즌 ${comp.season}`,
-        inline: true
-      })
+    // 경쟁전 정보
+    if (stats.pc.competitive) {
+      const compData = stats.pc.competitive
+      let compStatsInfo = ''
+      
+      // 총 플레이 시간
+      if (compData.career_stats && compData.career_stats['all-heroes']) {
+        const gameStats = compData.career_stats['all-heroes'].find(cat => cat.category === 'game')
+        if (gameStats) {
+          const timePlayedStat = gameStats.stats.find(stat => stat.key === 'time_played')
+          if (timePlayedStat) {
+            compStatsInfo += `**총 플레이 시간**: ${formatPlayTime(timePlayedStat.value)}\n`
+          }
+        }
+      }
+      
+      // 모스트 3영웅 (플레이 시간 기준)
+      if (compData.heroes_comparisons && compData.heroes_comparisons.time_played) {
+        const topHeroes = compData.heroes_comparisons.time_played.values.slice(0, 3)
+        if (topHeroes.length > 0) {
+          compStatsInfo += `**모스트 영웅**:\n`
+          topHeroes.forEach((hero, index) => {
+            const heroKorean = translateHeroName(hero.hero)
+            const playTime = formatPlayTime(hero.value)
+            compStatsInfo += `${index + 1}. ${heroKorean} (${playTime})\n`
+          })
+        }
+      }
+      
+      if (compStatsInfo) {
+        embed.addFields({
+          name: '⚔️ 경쟁전',
+          value: compStatsInfo,
+          inline: true
+        })
+      }
     }
   }
   
   // 네임카드가 있으면 추가
-  if (playerData.namecard) {
-    embed.setImage(playerData.namecard)
+  if (summary.namecard) {
+    embed.setImage(summary.namecard)
   }
   
   embed.setFooter({
