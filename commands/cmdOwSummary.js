@@ -130,6 +130,7 @@ function translateHeroName(heroName) {
     'hazard': '해저드',
     'freya': '프레야',
     'doomfist': '둠피스트',
+    'baptiste': '바티스트',
   }
   
   return heroMap[heroName] || heroName
