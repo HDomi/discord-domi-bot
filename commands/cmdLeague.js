@@ -108,11 +108,11 @@ function createMainMenuButtons() {
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('team_management')
-                .setLabel('👥  팀 관리  ')
+                .setLabel('👥    팀 관리    ')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId('score_management')
-                .setLabel('📊  점수 관리  ')
+                .setLabel('📊   점수 관리   ')
                 .setStyle(ButtonStyle.Primary)
         )
     
@@ -120,11 +120,11 @@ function createMainMenuButtons() {
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('team_movement')
-                .setLabel('🔊  팀 이동  ')
+                .setLabel('🔊    팀 이동    ')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId('banpick_setup')
-                .setLabel('⚔️  밴픽설정  ')
+                .setLabel('⚔️   밴픽설정   ')
                 .setStyle(ButtonStyle.Primary)
         )
     
@@ -132,7 +132,7 @@ function createMainMenuButtons() {
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('team_list')
-                .setLabel('📋  팀 목록  ')
+                .setLabel('📋    팀 목록    ')
                 .setStyle(ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId('voice_channel_move')
@@ -164,11 +164,11 @@ function createTeamManagementButtons() {
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('create_team')
-                .setLabel('➕  팀 생성  ')
+                .setLabel('➕    팀 생성    ')
                 .setStyle(ButtonStyle.Success),
             new ButtonBuilder()
                 .setCustomId('edit_team')
-                .setLabel('✏️  팀 편집  ')
+                .setLabel('✏️    팀 편집    ')
                 .setStyle(ButtonStyle.Primary)
         )
     
@@ -176,7 +176,7 @@ function createTeamManagementButtons() {
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('delete_team')
-                .setLabel('❌  팀 삭제  ')
+                .setLabel('❌    팀 삭제    ')
                 .setStyle(ButtonStyle.Danger),
             new ButtonBuilder()
                 .setCustomId('reset_all_teams')
@@ -188,7 +188,7 @@ function createTeamManagementButtons() {
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('back_to_main')
-                .setLabel('🔙  메인으로  ')
+                .setLabel('🔙   메인으로   ')
                 .setStyle(ButtonStyle.Secondary)
         )
     
@@ -234,11 +234,11 @@ function createScoreManagementButtons(teams) {
             .addComponents(
                 new ButtonBuilder()
                     .setCustomId('score_change')
-                    .setLabel('🎯  점수 변경  ')
+                    .setLabel('🎯   점수 변경   ')
                     .setStyle(ButtonStyle.Primary),
                 new ButtonBuilder()
                     .setCustomId('back_to_main')
-                    .setLabel('🔙  메인으로  ')
+                    .setLabel('🔙   메인으로   ')
                     .setStyle(ButtonStyle.Secondary)
             )
         rows.push(firstRow)
@@ -247,7 +247,7 @@ function createScoreManagementButtons(teams) {
             .addComponents(
                 new ButtonBuilder()
                     .setCustomId('back_to_main')
-                    .setLabel('🔙  메인으로  ')
+                    .setLabel('🔙   메인으로   ')
                     .setStyle(ButtonStyle.Secondary)
             )
         rows.push(firstRow)
@@ -321,11 +321,11 @@ function createTeamEditButtons(teamName) {
         .addComponents(
             new ButtonBuilder()
                 .setCustomId(`edit_name_${teamName}`)
-                .setLabel('📝  이름 변경  ')
+                .setLabel('📝   이름 변경   ')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId(`set_captain_${teamName}`)
-                .setLabel('👑  팀장 설정  ')
+                .setLabel('👑   팀장 설정   ')
                 .setStyle(ButtonStyle.Primary)
         )
     
@@ -333,11 +333,11 @@ function createTeamEditButtons(teamName) {
         .addComponents(
             new ButtonBuilder()
                 .setCustomId(`manage_members_${teamName}`)
-                .setLabel('👥  멤버 관리  ')
+                .setLabel('👥   멤버 관리   ')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId(`edit_channel_${teamName}`)
-                .setLabel('🔊  채널 변경  ')
+                .setLabel('🔊   채널 변경   ')
                 .setStyle(ButtonStyle.Primary)
         )
     
@@ -801,7 +801,7 @@ module.exports = {
                             .setColor(0xff0000)
                             .setTitle('⚠️ 오류')
                             .setDescription('편집할 팀이 없습니다.')
-                        await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        await i.editReply({ embeds: [embed], components: createTeamManagementButtons() })
                         return
                     }
                     const embed = new EmbedBuilder()
@@ -824,7 +824,7 @@ module.exports = {
                             .setColor(0xff0000)
                             .setTitle('⚠️ 오류')
                             .setDescription('삭제할 팀이 없습니다.')
-                        await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        await i.editReply({ embeds: [embed], components: createTeamManagementButtons() })
                         return
                     }
                     const embed = new EmbedBuilder()
@@ -1033,7 +1033,7 @@ module.exports = {
                         .setColor(0x00ff00)
                         .setTitle('✅ 초기화 완료')
                         .setDescription('모든 팀이 성공적으로 삭제되었습니다.')
-                    await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                    await i.editReply({ embeds: [embed], components: createTeamManagementButtons() })
                     
                 } else if (i.customId.startsWith('skip_captain_')) {
                     const teamName = i.customId.replace('skip_captain_', '')
