@@ -11,6 +11,9 @@ const database = getDatabase(firebaseApp);
 // 밴픽 설정 상태 관리 (메모리에 임시 저장)
 const banpickSessions = new Map(); // guildId -> { users: Map, usedTeams: Set, isActive: boolean }
 
+// 음성채널 이동 세션 관리
+const voiceMoveSession = new Map(); // guildId -> { selectedChannels: [], destinationChannel: null }
+
 /**
  * 길드의 리그 데이터를 Firebase에서 가져오는 함수
  * @param {string} guildId - 길드 ID
@@ -98,10 +101,10 @@ function createMainMenuEmbed(guildName) {
 
 /**
  * 메인 메뉴 버튼을 생성하는 함수
- * @returns {ActionRowBuilder} - 메인 메뉴 버튼
+ * @returns {Array<ActionRowBuilder>} - 메인 메뉴 버튼들
  */
 function createMainMenuButtons() {
-    return new ActionRowBuilder()
+    const firstRow = new ActionRowBuilder()
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('team_management')
@@ -124,6 +127,16 @@ function createMainMenuButtons() {
                 .setLabel('📋 팀 목록')
                 .setStyle(ButtonStyle.Secondary)
         )
+    
+    const secondRow = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('voice_channel_move')
+                .setLabel('🎵 음성채널 이동')
+                .setStyle(ButtonStyle.Success)
+        )
+    
+    return [firstRow, secondRow]
 }
 
 /**
@@ -338,6 +351,125 @@ function createTeamListEmbed(teams) {
     return embed
 }
 
+/**
+ * 음성채널의 멤버 수를 가져오는 함수
+ * @param {VoiceChannel} channel - 음성채널
+ * @returns {number} - 채널의 멤버 수
+ */
+function getChannelMemberCount(channel) {
+    return channel.members.size
+}
+
+/**
+ * 사람이 있는 음성채널만 필터링하는 함수
+ * @param {Collection} voiceChannels - 모든 음성채널
+ * @returns {Array} - 사람이 있는 음성채널 배열
+ */
+function getOccupiedVoiceChannels(voiceChannels) {
+    return voiceChannels.filter(channel => 
+        channel.type === 2 && // GUILD_VOICE
+        getChannelMemberCount(channel) > 0
+    )
+}
+
+/**
+ * 모든 음성채널을 가져오는 함수
+ * @param {Collection} channels - 모든 채널
+ * @returns {Array} - 음성채널 배열
+ */
+function getAllVoiceChannels(channels) {
+    return channels.filter(channel => channel.type === 2) // GUILD_VOICE
+}
+
+/**
+ * 음성채널 선택 메뉴 임베드를 생성하는 함수
+ * @param {Array} voiceChannels - 사람이 있는 음성채널 목록
+ * @returns {EmbedBuilder} - 채널 선택 메뉴 임베드
+ */
+function createVoiceChannelSelectionEmbed(voiceChannels) {
+    const embed = new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle('🎵 음성채널 이동')
+        .setDescription('멤버들을 이동시킬 **출발지** 채널들을 선택하세요.')
+        .setTimestamp()
+
+    if (voiceChannels.length === 0) {
+        embed.addFields({ name: '⚠️ 알림', value: '현재 사용 중인 음성채널이 없습니다.' })
+        return embed
+    }
+
+    let channelInfo = ''
+    voiceChannels.forEach(channel => {
+        const memberCount = getChannelMemberCount(channel)
+        channelInfo += `🔊 **${channel.name}**: ${memberCount}명\n`
+    })
+
+    embed.addFields({ name: '📊 현재 채널 상황', value: channelInfo })
+    return embed
+}
+
+/**
+ * 목적지 선택 메뉴 임베드를 생성하는 함수
+ * @param {Array} selectedChannels - 선택된 출발지 채널들
+ * @param {Array} allVoiceChannels - 모든 음성채널 목록
+ * @returns {EmbedBuilder} - 목적지 선택 메뉴 임베드
+ */
+function createVoiceDestinationSelectionEmbed(selectedChannels, allVoiceChannels) {
+    const embed = new EmbedBuilder()
+        .setColor(0x57f287)
+        .setTitle('🎯 목적지 채널 선택')
+        .setDescription('선택한 채널의 멤버들을 이동시킬 **목적지** 채널을 선택하세요.')
+        .setTimestamp()
+
+    let selectedInfo = ''
+    selectedChannels.forEach(channelId => {
+        const channel = allVoiceChannels.find(ch => ch.id === channelId)
+        if (channel) {
+            const memberCount = getChannelMemberCount(channel)
+            selectedInfo += `📤 **${channel.name}**: ${memberCount}명\n`
+        }
+    })
+
+    embed.addFields({ name: '📋 선택된 출발지 채널', value: selectedInfo })
+    return embed
+}
+
+/**
+ * 음성채널 이동 확인 임베드를 생성하는 함수
+ * @param {Array} selectedChannels - 선택된 출발지 채널들
+ * @param {string} destinationChannelId - 목적지 채널 ID
+ * @param {Array} allVoiceChannels - 모든 음성채널 목록
+ * @returns {EmbedBuilder} - 이동 확인 임베드
+ */
+function createVoiceMoveConfirmEmbed(selectedChannels, destinationChannelId, allVoiceChannels) {
+    const destinationChannel = allVoiceChannels.find(ch => ch.id === destinationChannelId)
+    
+    const embed = new EmbedBuilder()
+        .setColor(0xfee75c)
+        .setTitle('⚠️ 이동 확인')
+        .setDescription('아래 설정으로 멤버 이동을 실행하시겠습니까?')
+        .setTimestamp()
+
+    let sourceInfo = ''
+    let totalMembers = 0
+    selectedChannels.forEach(channelId => {
+        const channel = allVoiceChannels.find(ch => ch.id === channelId)
+        if (channel) {
+            const memberCount = getChannelMemberCount(channel)
+            totalMembers += memberCount
+            sourceInfo += `📤 **${channel.name}**: ${memberCount}명\n`
+        }
+    })
+
+    embed.addFields(
+        { name: '📤 출발지 채널', value: sourceInfo, inline: false },
+        { name: '📥 목적지 채널', value: `🔊 **${destinationChannel.name}**`, inline: false },
+        { name: '👥 총 이동 예정 인원', value: `${totalMembers}명`, inline: false }
+    )
+
+    return embed
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('리그')
@@ -359,7 +491,7 @@ module.exports = {
         // fetchReply 대신 최신 방식 사용
         await interaction.reply({ 
             embeds: [embed], 
-            components: [buttons]
+            components: buttons
         })
 
         const reply = await interaction.fetchReply()
@@ -395,7 +527,7 @@ module.exports = {
                             .setColor(0xff0000)
                             .setTitle('⚠️ 오류')
                             .setDescription('이동할 팀이 없습니다. 먼저 팀을 생성해주세요.')
-                        await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
+                        await i.editReply({ embeds: [embed], components: createMainMenuButtons() })
                         return
                     }
                     const embed = new EmbedBuilder()
@@ -434,6 +566,65 @@ module.exports = {
                                 .setStyle(ButtonStyle.Secondary)
                         )
                     await i.editReply({ embeds: [embed], components: [backButton] })
+                    
+                } else if (i.customId === 'voice_channel_move') {
+                    // 권한 확인
+                    if (!i.member.permissions.has(PermissionsBitField.Flags.MoveMembers)) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('❌ 권한 부족')
+                            .setDescription('이 기능을 사용하려면 **멤버 이동** 권한이 필요합니다.')
+                        await i.editReply({ embeds: [embed], components: createMainMenuButtons() })
+                        return
+                    }
+
+                    const allVoiceChannels = getAllVoiceChannels(i.guild.channels.cache)
+                    const occupiedChannels = getOccupiedVoiceChannels(allVoiceChannels)
+
+                    if (occupiedChannels.length === 0) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('⚠️ 알림')
+                            .setDescription('현재 사용 중인 음성채널이 없습니다.')
+                        await i.editReply({ embeds: [embed], components: createMainMenuButtons() })
+                        return
+                    }
+
+                    const embed = createVoiceChannelSelectionEmbed(occupiedChannels)
+                    
+                    // 출발지 채널 선택 메뉴
+                    const sourceSelectOptions = occupiedChannels.map(channel => ({
+                        label: channel.name,
+                        value: channel.id,
+                        description: `${getChannelMemberCount(channel)}명 참여 중`
+                    }))
+
+                    const sourceSelect = new ActionRowBuilder()
+                        .addComponents(
+                            new StringSelectMenuBuilder()
+                                .setCustomId('voice_source_select')
+                                .setPlaceholder('이동할 출발지 채널들을 선택하세요')
+                                .addOptions(sourceSelectOptions)
+                                .setMinValues(1)
+                                .setMaxValues(Math.min(sourceSelectOptions.length, 25))
+                        )
+
+                    const cancelButton = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('voice_cancel')
+                                .setLabel('❌ 취소')
+                                .setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_main')
+                                .setLabel('🔙 메인으로')
+                                .setStyle(ButtonStyle.Secondary)
+                        )
+
+                    await i.editReply({ 
+                        embeds: [embed], 
+                        components: [sourceSelect, cancelButton]
+                    })
                     
                 } else if (i.customId === 'banpick_setup') {
                     // 팀장이 설정된 팀이 최소 2개 있는지 확인
@@ -514,7 +705,7 @@ module.exports = {
                 } else if (i.customId === 'back_to_main') {
                     const embed = createMainMenuEmbed(interaction.guild.name)
                     const buttons = createMainMenuButtons()
-                    await i.editReply({ embeds: [embed], components: [buttons] })
+                    await i.editReply({ embeds: [embed], components: buttons })
                     
                 // === 팀 관리 ===
                 } else if (i.customId === 'create_team') {
@@ -635,6 +826,174 @@ module.exports = {
                                 .setStyle(ButtonStyle.Secondary)
                         )
                     await i.editReply({ embeds: [embed], components: [confirmButtons] })
+                    
+                } else if (i.customId === 'voice_execute') {
+                    const session = voiceMoveSession.get(i.guild.id)
+                    
+                    if (!session) {
+                        const errorEmbed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('❌ 세션 오류')
+                            .setDescription('세션이 만료되었습니다. 다시 시작해주세요.')
+                        
+                        await i.editReply({ embeds: [errorEmbed], components: createMainMenuButtons() })
+                        return
+                    }
+                    
+                    // 실제 이동 실행
+                    const destinationChannel = i.guild.channels.cache.get(session.destinationChannel)
+                    
+                    if (!destinationChannel) {
+                        const errorEmbed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('❌ 오류')
+                            .setDescription('목적지 채널을 찾을 수 없습니다.')
+                        
+                        await i.editReply({ embeds: [errorEmbed], components: createMainMenuButtons() })
+                        return
+                    }
+
+                    let totalMoved = 0
+                    let totalErrors = 0
+                    const moveResults = []
+
+                    for (const channelId of session.selectedChannels) {
+                        const sourceChannel = i.guild.channels.cache.get(channelId)
+                        if (!sourceChannel) continue
+
+                        let channelMoved = 0
+                        let channelErrors = 0
+
+                        for (const [memberId, member] of sourceChannel.members) {
+                            try {
+                                await member.voice.setChannel(destinationChannel)
+                                channelMoved++
+                                totalMoved++
+                            } catch (error) {
+                                channelErrors++
+                                totalErrors++
+                                console.error(`Failed to move member ${memberId}:`, error)
+                            }
+                        }
+
+                        moveResults.push(`${channelMoved > 0 ? '✅' : '⚠️'} **${sourceChannel.name}**: ${channelMoved}명 이동, ${channelErrors}명 실패`)
+                    }
+
+                    const resultEmbed = new EmbedBuilder()
+                        .setColor(totalMoved > 0 ? 0x57f287 : 0xff0000)
+                        .setTitle('🚀 이동 완료')
+                        .setDescription(`**${destinationChannel.name}**으로 멤버 이동이 완료되었습니다.`)
+                        .addFields(
+                            { name: '📊 전체 결과', value: `성공: ${totalMoved}명\n실패: ${totalErrors}명`, inline: true },
+                            { name: '🎯 채널별 상세', value: moveResults.join('\n') || '이동할 멤버가 없습니다.', inline: false }
+                        )
+                        .setTimestamp()
+
+                    // 세션 정리
+                    voiceMoveSession.delete(i.guild.id)
+
+                    await i.editReply({ embeds: [resultEmbed], components: createMainMenuButtons() })
+                    
+                } else if (i.customId === 'voice_cancel') {
+                    // 세션 정리
+                    voiceMoveSession.delete(i.guild.id)
+                    
+                    const cancelEmbed = new EmbedBuilder()
+                        .setColor(0x808080)
+                        .setTitle('❌ 취소됨')
+                        .setDescription('음성채널 이동이 취소되었습니다.')
+                    
+                    await i.editReply({ embeds: [cancelEmbed], components: createMainMenuButtons() })
+                    
+                } else if (i.customId === 'voice_back_to_source') {
+                    // 출발지 선택으로 돌아가기
+                    const allVoiceChannels = getAllVoiceChannels(i.guild.channels.cache)
+                    const occupiedChannels = getOccupiedVoiceChannels(allVoiceChannels)
+                    
+                    const embed = createVoiceChannelSelectionEmbed(occupiedChannels)
+                    
+                    const sourceSelectOptions = occupiedChannels.map(channel => ({
+                        label: channel.name,
+                        value: channel.id,
+                        description: `${getChannelMemberCount(channel)}명 참여 중`
+                    }))
+
+                    const sourceSelect = new ActionRowBuilder()
+                        .addComponents(
+                            new StringSelectMenuBuilder()
+                                .setCustomId('voice_source_select')
+                                .setPlaceholder('이동할 출발지 채널들을 선택하세요')
+                                .addOptions(sourceSelectOptions)
+                                .setMinValues(1)
+                                .setMaxValues(Math.min(sourceSelectOptions.length, 25))
+                        )
+
+                    const cancelButton = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('voice_cancel')
+                                .setLabel('❌ 취소')
+                                .setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder()
+                                .setCustomId('back_to_main')
+                                .setLabel('🔙 메인으로')
+                                .setStyle(ButtonStyle.Secondary)
+                        )
+
+                    await i.editReply({ 
+                        embeds: [embed], 
+                        components: [sourceSelect, cancelButton] 
+                    })
+                    
+                } else if (i.customId === 'voice_back_to_destination') {
+                    // 목적지 선택으로 돌아가기
+                    const session = voiceMoveSession.get(i.guild.id)
+                    
+                    if (!session) {
+                        const errorEmbed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('❌ 세션 오류')
+                            .setDescription('세션이 만료되었습니다. 다시 시작해주세요.')
+                        
+                        await i.editReply({ embeds: [errorEmbed], components: createMainMenuButtons() })
+                        return
+                    }
+                    
+                    const allVoiceChannels = getAllVoiceChannels(i.guild.channels.cache)
+                    const destinationEmbed = createVoiceDestinationSelectionEmbed(session.selectedChannels, allVoiceChannels)
+                    
+                    const destinationSelectOptions = allVoiceChannels
+                        .filter(channel => !session.selectedChannels.includes(channel.id))
+                        .map(channel => ({
+                            label: channel.name,
+                            value: channel.id,
+                            description: `현재 ${getChannelMemberCount(channel)}명`
+                        }))
+
+                    const destinationSelect = new ActionRowBuilder()
+                        .addComponents(
+                            new StringSelectMenuBuilder()
+                                .setCustomId('voice_destination_select')
+                                .setPlaceholder('목적지 채널을 선택하세요')
+                                .addOptions(destinationSelectOptions)
+                        )
+
+                    const backButton = new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('voice_back_to_source')
+                                .setLabel('🔙 이전으로')
+                                .setStyle(ButtonStyle.Secondary),
+                            new ButtonBuilder()
+                                .setCustomId('voice_cancel')
+                                .setLabel('❌ 취소')
+                                .setStyle(ButtonStyle.Danger)
+                        )
+
+                    await i.editReply({ 
+                        embeds: [destinationEmbed], 
+                        components: [destinationSelect, backButton] 
+                    })
                     
                 } else if (i.customId === 'confirm_reset_all') {
                     await removeAllTeams(i.guild.id)
@@ -1157,6 +1516,106 @@ module.exports = {
                                 { name: '새 팀장', value: `<@${selectedUserId}>` }
                             )
                         await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        
+                    } else if (i.customId === 'voice_source_select') {
+                        const selectedSourceChannels = i.values
+                        const allVoiceChannels = getAllVoiceChannels(i.guild.channels.cache)
+                        
+                        // 세션에 저장
+                        voiceMoveSession.set(i.guild.id, { 
+                            selectedChannels: selectedSourceChannels, 
+                            destinationChannel: null 
+                        })
+                        
+                        // 목적지 채널 선택 메뉴 생성
+                        const destinationEmbed = createVoiceDestinationSelectionEmbed(selectedSourceChannels, allVoiceChannels)
+                        
+                        const destinationSelectOptions = allVoiceChannels
+                            .filter(channel => !selectedSourceChannels.includes(channel.id))
+                            .map(channel => ({
+                                label: channel.name,
+                                value: channel.id,
+                                description: `현재 ${getChannelMemberCount(channel)}명`
+                            }))
+
+                        if (destinationSelectOptions.length === 0) {
+                            const errorEmbed = new EmbedBuilder()
+                                .setColor(0xff0000)
+                                .setTitle('⚠️ 오류')
+                                .setDescription('이동할 수 있는 목적지 채널이 없습니다.')
+                            
+                            await i.editReply({ embeds: [errorEmbed], components: createMainMenuButtons() })
+                            return
+                        }
+
+                        const destinationSelect = new ActionRowBuilder()
+                            .addComponents(
+                                new StringSelectMenuBuilder()
+                                    .setCustomId('voice_destination_select')
+                                    .setPlaceholder('목적지 채널을 선택하세요')
+                                    .addOptions(destinationSelectOptions)
+                            )
+
+                        const backButton = new ActionRowBuilder()
+                            .addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId('voice_back_to_source')
+                                    .setLabel('🔙 이전으로')
+                                    .setStyle(ButtonStyle.Secondary),
+                                new ButtonBuilder()
+                                    .setCustomId('voice_cancel')
+                                    .setLabel('❌ 취소')
+                                    .setStyle(ButtonStyle.Danger)
+                            )
+
+                        await i.editReply({ 
+                            embeds: [destinationEmbed], 
+                            components: [destinationSelect, backButton] 
+                        })
+                        
+                    } else if (i.customId === 'voice_destination_select') {
+                        const selectedDestinationChannel = i.values[0]
+                        const session = voiceMoveSession.get(i.guild.id)
+                        
+                        if (!session) {
+                            const errorEmbed = new EmbedBuilder()
+                                .setColor(0xff0000)
+                                .setTitle('❌ 세션 오류')
+                                .setDescription('세션이 만료되었습니다. 다시 시작해주세요.')
+                            
+                            await i.editReply({ embeds: [errorEmbed], components: createMainMenuButtons() })
+                            return
+                        }
+                        
+                        // 세션 업데이트
+                        session.destinationChannel = selectedDestinationChannel
+                        voiceMoveSession.set(i.guild.id, session)
+                        
+                        const allVoiceChannels = getAllVoiceChannels(i.guild.channels.cache)
+                        
+                        // 이동 확인 메뉴
+                        const confirmEmbed = createVoiceMoveConfirmEmbed(session.selectedChannels, selectedDestinationChannel, allVoiceChannels)
+                        
+                        const confirmButtons = new ActionRowBuilder()
+                            .addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId('voice_execute')
+                                    .setLabel('✅ 이동 실행')
+                                    .setStyle(ButtonStyle.Success),
+                                new ButtonBuilder()
+                                    .setCustomId('voice_back_to_destination')
+                                    .setLabel('🔙 이전으로')
+                                    .setStyle(ButtonStyle.Secondary),
+                                new ButtonBuilder()
+                                    .setCustomId('voice_cancel')
+                                    .setLabel('❌ 취소')
+                                    .setStyle(ButtonStyle.Danger)
+                            )
+
+                        await i.editReply({ 
+                            embeds: [confirmEmbed], 
+                            components: [confirmButtons] 
+                        })
                         
                     } else if (i.customId === 'banpick_team_select') {
                         const selectedTeams = i.values
