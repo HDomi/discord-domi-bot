@@ -108,35 +108,39 @@ function createMainMenuButtons() {
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('team_management')
-                .setLabel('👥 팀 관리')
+                .setLabel('👥  팀 관리  ')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId('score_management')
-                .setLabel('📊 점수 관리')
-                .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-                .setCustomId('team_movement')
-                .setLabel('🔊 팀 이동')
-                .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-                .setCustomId('banpick_setup')
-                .setLabel('⚔️ 밴픽설정')
-                .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-                .setCustomId('team_list')
-                .setLabel('📋 팀 목록')
-                .setStyle(ButtonStyle.Secondary)
+                .setLabel('📊  점수 관리  ')
+                .setStyle(ButtonStyle.Primary)
         )
     
     const secondRow = new ActionRowBuilder()
         .addComponents(
             new ButtonBuilder()
+                .setCustomId('team_movement')
+                .setLabel('🔊  팀 이동  ')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('banpick_setup')
+                .setLabel('⚔️  밴픽설정  ')
+                .setStyle(ButtonStyle.Primary)
+        )
+    
+    const thirdRow = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('team_list')
+                .setLabel('📋  팀 목록  ')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
                 .setCustomId('voice_channel_move')
-                .setLabel('🎵 음성채널 이동')
+                .setLabel('🎵  음성채널 이동  ')
                 .setStyle(ButtonStyle.Success)
         )
     
-    return [firstRow, secondRow]
+    return [firstRow, secondRow, thirdRow]
 }
 
 /**
@@ -153,32 +157,42 @@ function createTeamManagementEmbed() {
 
 /**
  * 팀 관리 메뉴 버튼을 생성하는 함수
- * @returns {ActionRowBuilder} - 팀 관리 메뉴 버튼
+ * @returns {Array<ActionRowBuilder>} - 팀 관리 메뉴 버튼들
  */
 function createTeamManagementButtons() {
-    return new ActionRowBuilder()
+    const firstRow = new ActionRowBuilder()
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('create_team')
-                .setLabel('➕ 팀 생성')
+                .setLabel('➕  팀 생성  ')
                 .setStyle(ButtonStyle.Success),
             new ButtonBuilder()
                 .setCustomId('edit_team')
-                .setLabel('✏️ 팀 편집')
-                .setStyle(ButtonStyle.Primary),
+                .setLabel('✏️  팀 편집  ')
+                .setStyle(ButtonStyle.Primary)
+        )
+    
+    const secondRow = new ActionRowBuilder()
+        .addComponents(
             new ButtonBuilder()
                 .setCustomId('delete_team')
-                .setLabel('❌ 팀 삭제')
+                .setLabel('❌  팀 삭제  ')
                 .setStyle(ButtonStyle.Danger),
             new ButtonBuilder()
                 .setCustomId('reset_all_teams')
-                .setLabel('🗑️ 전체 초기화')
-                .setStyle(ButtonStyle.Danger),
+                .setLabel('🗑️  전체 초기화  ')
+                .setStyle(ButtonStyle.Danger)
+        )
+    
+    const thirdRow = new ActionRowBuilder()
+        .addComponents(
             new ButtonBuilder()
                 .setCustomId('back_to_main')
-                .setLabel('🔙 메인으로')
+                .setLabel('🔙  메인으로  ')
                 .setStyle(ButtonStyle.Secondary)
         )
+    
+    return [firstRow, secondRow, thirdRow]
 }
 
 /**
@@ -210,28 +224,36 @@ function createScoreManagementEmbed(teams) {
 /**
  * 점수 관리 메뉴 버튼을 생성하는 함수
  * @param {Map} teams - 팀 데이터
- * @returns {ActionRowBuilder} - 점수 관리 메뉴 버튼
+ * @returns {Array<ActionRowBuilder>} - 점수 관리 메뉴 버튼들
  */
 function createScoreManagementButtons(teams) {
-    const row = new ActionRowBuilder()
+    const rows = []
     
     if (teams.size > 0) {
-        row.addComponents(
-            new ButtonBuilder()
-                .setCustomId('score_change')
-                .setLabel('🎯 점수 변경')
-                .setStyle(ButtonStyle.Primary)
-        )
+        const firstRow = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('score_change')
+                    .setLabel('🎯  점수 변경  ')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('back_to_main')
+                    .setLabel('🔙  메인으로  ')
+                    .setStyle(ButtonStyle.Secondary)
+            )
+        rows.push(firstRow)
+    } else {
+        const firstRow = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('back_to_main')
+                    .setLabel('🔙  메인으로  ')
+                    .setStyle(ButtonStyle.Secondary)
+            )
+        rows.push(firstRow)
     }
 
-    row.addComponents(
-        new ButtonBuilder()
-            .setCustomId('back_to_main')
-            .setLabel('🔙 메인으로')
-            .setStyle(ButtonStyle.Secondary)
-    )
-
-    return row
+    return rows
 }
 
 /**
@@ -292,32 +314,42 @@ function createTeamEditEmbed(teamName, teams) {
 /**
  * 팀 편집 메뉴 버튼을 생성하는 함수
  * @param {string} teamName - 팀 이름
- * @returns {ActionRowBuilder} - 팀 편집 메뉴 버튼
+ * @returns {Array<ActionRowBuilder>} - 팀 편집 메뉴 버튼들
  */
 function createTeamEditButtons(teamName) {
-    return new ActionRowBuilder()
+    const firstRow = new ActionRowBuilder()
         .addComponents(
             new ButtonBuilder()
                 .setCustomId(`edit_name_${teamName}`)
-                .setLabel('이름 변경')
+                .setLabel('📝  이름 변경  ')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId(`set_captain_${teamName}`)
-                .setLabel('팀장 설정')
-                .setStyle(ButtonStyle.Primary),
+                .setLabel('👑  팀장 설정  ')
+                .setStyle(ButtonStyle.Primary)
+        )
+    
+    const secondRow = new ActionRowBuilder()
+        .addComponents(
             new ButtonBuilder()
                 .setCustomId(`manage_members_${teamName}`)
-                .setLabel('멤버 관리')
+                .setLabel('👥  멤버 관리  ')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId(`edit_channel_${teamName}`)
-                .setLabel('채널 변경')
-                .setStyle(ButtonStyle.Primary),
+                .setLabel('🔊  채널 변경  ')
+                .setStyle(ButtonStyle.Primary)
+        )
+    
+    const thirdRow = new ActionRowBuilder()
+        .addComponents(
             new ButtonBuilder()
                 .setCustomId('team_management')
-                .setLabel('🔙 팀 관리로')
+                .setLabel('🔙  팀 관리로  ')
                 .setStyle(ButtonStyle.Secondary)
         )
+    
+    return [firstRow, secondRow, thirdRow]
 }
 
 /**
@@ -514,12 +546,12 @@ module.exports = {
                 if (i.customId === 'team_management') {
                     const embed = createTeamManagementEmbed()
                     const buttons = createTeamManagementButtons()
-                    await i.editReply({ embeds: [embed], components: [buttons] })
+                    await i.editReply({ embeds: [embed], components: buttons })
                     
                 } else if (i.customId === 'score_management') {
                     const embed = createScoreManagementEmbed(currentTeams)
                     const buttons = createScoreManagementButtons(currentTeams)
-                    await i.editReply({ embeds: [embed], components: [buttons] })
+                    await i.editReply({ embeds: [embed], components: buttons })
                     
                 } else if (i.customId === 'team_movement') {
                     if (currentTeams.size === 0) {
@@ -733,7 +765,7 @@ module.exports = {
                                 .setDescription(`이미 존재하는 팀 이름입니다: ${teamName}`)
                             
                             await m.delete().catch(() => {})
-                            await interaction.editReply({ embeds: [errorEmbed], components: [createTeamManagementButtons()] })
+                            await interaction.editReply({ embeds: [errorEmbed], components: createTeamManagementButtons() })
                             return
                         }
 
@@ -1348,7 +1380,7 @@ module.exports = {
                     if (i.customId === 'edit_team_select') {
                         const embed = createTeamEditEmbed(selectedValue, currentTeams)
                         const buttons = createTeamEditButtons(selectedValue)
-                        await i.editReply({ embeds: [embed], components: [buttons] })
+                        await i.editReply({ embeds: [embed], components: buttons })
                         
                     } else if (i.customId === 'delete_team_select') {
                         await removeTeamData(i.guild.id, selectedValue)
@@ -1447,10 +1479,10 @@ module.exports = {
                                     .setDescription('올바른 숫자를 입력해주세요. (예: 10, -5)')
                                 
                                 await m.delete().catch(() => {})
-                                await interaction.editReply({ 
-                                    embeds: [errorEmbed], 
-                                    components: [createScoreManagementButtons(currentTeams)] 
-                                })
+                                                            await interaction.editReply({ 
+                                embeds: [errorEmbed], 
+                                components: createScoreManagementButtons(currentTeams) 
+                            })
                                 return
                             }
                             
@@ -1470,7 +1502,7 @@ module.exports = {
                             await m.delete().catch(() => {})
                             await interaction.editReply({ 
                                 embeds: [successEmbed], 
-                                components: [createScoreManagementButtons(updatedTeams)] 
+                                components: createScoreManagementButtons(updatedTeams) 
                             })
                         })
                         
