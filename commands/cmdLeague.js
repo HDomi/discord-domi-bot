@@ -671,7 +671,7 @@ module.exports = {
                                 { name: '현재 상태', value: `팀장이 설정된 팀: ${teamsWithCaptains.length}개` },
                                 { name: '해결 방법', value: '팀 관리 → 팀 편집 → 팀장 설정을 통해 각 팀의 팀장을 먼저 설정해주세요.' }
                             )
-                        await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
+                        await i.editReply({ embeds: [embed], components: createMainMenuButtons() })
                         return
                     }
                     
@@ -801,7 +801,7 @@ module.exports = {
                             .setColor(0xff0000)
                             .setTitle('⚠️ 오류')
                             .setDescription('편집할 팀이 없습니다.')
-                        await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        await i.editReply({ embeds: [embed], components: createTeamManagementButtons() })
                         return
                     }
                     const embed = new EmbedBuilder()
@@ -824,7 +824,7 @@ module.exports = {
                             .setColor(0xff0000)
                             .setTitle('⚠️ 오류')
                             .setDescription('삭제할 팀이 없습니다.')
-                        await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        await i.editReply({ embeds: [embed], components: createTeamManagementButtons() })
                         return
                     }
                     const embed = new EmbedBuilder()
@@ -1033,7 +1033,7 @@ module.exports = {
                         .setColor(0x00ff00)
                         .setTitle('✅ 초기화 완료')
                         .setDescription('모든 팀이 성공적으로 삭제되었습니다.')
-                    await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                    await i.editReply({ embeds: [embed], components: createTeamManagementButtons() })
                     
                 } else if (i.customId.startsWith('skip_captain_')) {
                     const teamName = i.customId.replace('skip_captain_', '')
@@ -1072,7 +1072,7 @@ module.exports = {
                             .setColor(0xff0000)
                             .setTitle('⚠️ 권한 부족')
                             .setDescription('멤버 이동 권한이 필요합니다.')
-                        await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
+                        await i.editReply({ embeds: [embed], components: createMainMenuButtons() })
                         return
                     }
                     
@@ -1084,7 +1084,7 @@ module.exports = {
                             .setColor(0xff0000)
                             .setTitle('⚠️ 오류')
                             .setDescription('음성채널이 설정된 팀이 없습니다. 먼저 팀에 음성채널을 설정해주세요.')
-                        await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
+                        await i.editReply({ embeds: [embed], components: createMainMenuButtons() })
                         return
                     }
                     
@@ -1132,7 +1132,7 @@ module.exports = {
                             { name: '🎯 팀별 상세', value: moveResults.join('\n') || '이동할 멤버가 없습니다.', inline: false }
                         )
                     
-                    await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
+                    await i.editReply({ embeds: [embed], components: createMainMenuButtons() })
                     
                 } else if (i.customId === 'move_single_team') {
                     const embed = new EmbedBuilder()
@@ -1191,7 +1191,7 @@ module.exports = {
                                 .setColor(0xff0000)
                                 .setTitle('⚠️ 오류')
                                 .setDescription(`이미 존재하는 팀 이름입니다: ${newTeamName}`)
-                            await interaction.editReply({ embeds: [errorEmbed], components: [createTeamManagementButtons()] })
+                            await interaction.editReply({ embeds: [errorEmbed], components: createTeamManagementButtons() })
                             return
                         }
                         
@@ -1204,7 +1204,7 @@ module.exports = {
                             .setColor(0x00ff00)
                             .setTitle('✅ 이름 변경 완료')
                             .setDescription(`팀 이름이 "${teamName}"에서 "${newTeamName}"으로 변경되었습니다.`)
-                        await interaction.editReply({ embeds: [successEmbed], components: [createTeamManagementButtons()] })
+                        await interaction.editReply({ embeds: [successEmbed], components: createTeamManagementButtons() })
                     })
                     
                 } else if (i.customId.startsWith('manage_members_')) {
@@ -1388,7 +1388,7 @@ module.exports = {
                             .setColor(0x00ff00)
                             .setTitle('✅ 팀 삭제 완료')
                             .setDescription(`팀 "${selectedValue}"이 성공적으로 삭제되었습니다.`)
-                        await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        await i.editReply({ embeds: [embed], components: createTeamManagementButtons() })
                         
                     } else if (i.customId === 'move_team_select') {
                         const teamData = currentTeams.get(selectedValue)
@@ -1398,7 +1398,7 @@ module.exports = {
                                 .setColor(0xff0000)
                                 .setTitle('⚠️ 오류')
                                 .setDescription(`팀 "${selectedValue}"에 음성채널이 설정되지 않았습니다.`)
-                            await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
+                            await i.editReply({ embeds: [embed], components: createMainMenuButtons() })
                             return
                         }
                         
@@ -1407,7 +1407,7 @@ module.exports = {
                                 .setColor(0xff0000)
                                 .setTitle('⚠️ 권한 부족')
                                 .setDescription('멤버 이동 권한이 필요합니다.')
-                            await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
+                            await i.editReply({ embeds: [embed], components: createMainMenuButtons() })
                             return
                         }
                         
@@ -1418,7 +1418,7 @@ module.exports = {
                                 .setColor(0xff0000)
                                 .setTitle('⚠️ 오류')
                                 .setDescription('설정된 음성채널을 찾을 수 없습니다.')
-                            await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
+                            await i.editReply({ embeds: [embed], components: createMainMenuButtons() })
                             return
                         }
                         
@@ -1448,7 +1448,7 @@ module.exports = {
                                 { name: '대상 채널', value: `<#${teamData.voiceChannelId}>`, inline: true }
                             )
                         
-                        await i.editReply({ embeds: [embed], components: [createMainMenuButtons()] })
+                        await i.editReply({ embeds: [embed], components: createMainMenuButtons() })
                         
                     } else if (i.customId === 'score_team_select') {
                         const embed = new EmbedBuilder()
@@ -1522,7 +1522,7 @@ module.exports = {
                             .setColor(0x00ff00)
                             .setTitle('✅ 멤버 제외 완료')
                             .setDescription(`"${teamName}" 팀에서 ${i.values.length}명의 멤버가 제외되었습니다.`)
-                        await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        await i.editReply({ embeds: [embed], components: createTeamManagementButtons() })
                         
                     } else if (i.customId.startsWith('select_captain_')) {
                         const teamName = i.customId.replace('select_captain_', '')
@@ -1547,7 +1547,7 @@ module.exports = {
                             .addFields(
                                 { name: '새 팀장', value: `<@${selectedUserId}>` }
                             )
-                        await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        await i.editReply({ embeds: [embed], components: createTeamManagementButtons() })
                         
                     } else if (i.customId === 'voice_source_select') {
                         const selectedSourceChannels = i.values
@@ -1721,7 +1721,7 @@ module.exports = {
                                     { name: '해결 방법', value: '팀장들에게 DM 설정을 확인하도록 요청해주세요.' }
                                 )
                             
-                            await interaction.editReply({ embeds: [errorEmbed], components: [createMainMenuButtons()] })
+                            await interaction.editReply({ embeds: [errorEmbed], components: createMainMenuButtons() })
                             banpickSessions.delete(i.guild.id)
                         }
                     }
@@ -1788,7 +1788,7 @@ module.exports = {
                                     { name: '추가된 멤버', value: selectedUsers.map(id => `<@${id}>`).join(', ') }
                                 )
                             
-                            await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                            await i.editReply({ embeds: [embed], components: createTeamManagementButtons() })
                         }
                     }
                     
@@ -1815,7 +1815,7 @@ module.exports = {
                                 { name: '설정된 채널', value: `<#${selectedChannelId}>` }
                             )
                         
-                        await i.editReply({ embeds: [embed], components: [createTeamManagementButtons()] })
+                        await i.editReply({ embeds: [embed], components: createTeamManagementButtons() })
                     }
                 }
                 
