@@ -41,6 +41,7 @@ for (const file of commandFiles) {
 }
 
 client.on('messageCreate', async (message) => {
+    return;
     // 욕설 필터링 (길드 메시지만)
     if (message.guild && fWordCollector(message.content)) {
         message.reply('욕하지 마세염!');
