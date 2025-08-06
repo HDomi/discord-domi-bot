@@ -525,6 +525,9 @@ function pauseMusic(guildId) {
     }
 }
 
+
+
+
 /**
  * 일시정지된 음악을 재개하는 함수
  * @param {string} guildId - 길드 ID
