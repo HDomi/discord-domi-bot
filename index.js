@@ -22,7 +22,17 @@ const client = new Client({ intents: [
 ]});
 
 client.once(Events.ClientReady, readyClient => {
-console.log(`${readyClient.user.tag} 실행완료`);
+    console.log(`${readyClient.user.tag} 실행완료`);
+    
+    // 음악 봇의 음성 상태 이벤트 리스너 설정
+    try {
+        const musicCommand = require('./commands/cmdMusic');
+        if (musicCommand.setupVoiceStateListener) {
+            musicCommand.setupVoiceStateListener(client);
+        }
+    } catch (error) {
+        console.error('음성 상태 이벤트 리스너 설정 실패:', error);
+    }
 });
 
 module.exports = { queue, log };
