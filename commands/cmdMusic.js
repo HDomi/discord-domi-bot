@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, EmbedBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js')
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, getVoiceConnection } = require('@discordjs/voice')
 const play = require('play-dl')
+const ytdl = require('ytdl-core')
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, remove, push, child } = require('firebase/database');
 const firebaseConfig = require('../config/firebaseConfig');
@@ -452,6 +453,32 @@ async function connectToVoiceChannel(voiceChannel, guildId) {
 }
 
 /**
+ * ytdl-core를 사용하여 스트림을 생성하는 함수
+ * @param {string} url - YouTube URL
+ * @returns {Promise<object>} - 스트림 객체
+ */
+async function createYtdlStream(url) {
+    try {
+        console.log(`[스트림] ytdl-core로 스트림 생성 시도: ${url}`);
+        
+        // ytdl-core로 스트림 생성
+        const stream = ytdl(url, {
+            filter: 'audioonly',
+            quality: 'highestaudio',
+            highWaterMark: 1 << 25, // 32MB
+        });
+        
+        return {
+            stream: stream,
+            type: 'arbitrary', // ytdl-core는 arbitrary 타입 사용
+        };
+    } catch (error) {
+        console.error('[스트림] ytdl-core 스트림 생성 실패:', error);
+        throw error;
+    }
+}
+
+/**
  * 현재 곡을 재생하는 함수
  * @param {string} guildId - 길드 ID
  * @param {number} retryCount - 재시도 횟수 (기본값: 0)
@@ -493,38 +520,48 @@ async function playCurrentSong(guildId, retryCount = 0) {
         
         console.log(`[${guildId}] 재생 시작: ${currentSong.title} (URL: ${currentSong.url})`);
 
-        // play-dl로 오디오 스트림 생성
+        // 오디오 스트림 생성 (play-dl 우선, 실패 시 ytdl-core 사용)
         let stream;
+        let streamMethod = 'play-dl';
+        
         try {
             // URL 최종 검증
             const urlToPlay = String(currentSong.url).trim();
-            console.log(`[${guildId}] play.stream()에 전달할 URL:`, urlToPlay);
+            console.log(`[${guildId}] 스트림 생성 URL:`, urlToPlay);
             console.log(`[${guildId}] URL 타입:`, typeof urlToPlay);
-            console.log(`[${guildId}] URL 유효성 검사:`, play.yt_validate(urlToPlay));
             
             if (!urlToPlay || typeof urlToPlay !== 'string' || urlToPlay === 'undefined') {
                 throw new Error(`잘못된 URL 형식: ${urlToPlay} (타입: ${typeof urlToPlay})`);
             }
             
-            // play-dl의 다른 방법으로 스트림 생성 시도
-            console.log(`[${guildId}] 비디오 정보 가져오기 시도...`);
-            const videoInfo = await play.video_info(urlToPlay);
-            console.log(`[${guildId}] 비디오 정보 획득 성공:`, videoInfo.title);
-            
-            console.log(`[${guildId}] 스트림 생성 시도...`);
-            stream = await play.stream(urlToPlay, {
-                quality: 1, // 중간 품질로 변경
-                htmldata: false, // HTML 데이터 사용 안함
-                precache: 0, // 프리캐시 비활성화
-            });
-            
-            if (!stream || !stream.stream) {
-                throw new Error('스트림 생성 실패');
+            // play-dl로 먼저 시도
+            try {
+                console.log(`[${guildId}] play-dl로 스트림 생성 시도...`);
+                console.log(`[${guildId}] URL 유효성 검사:`, play.yt_validate(urlToPlay));
+                
+                stream = await play.stream(urlToPlay, {
+                    quality: 1, // 중간 품질
+                    htmldata: false,
+                    precache: 0,
+                });
+                
+                if (!stream || !stream.stream) {
+                    throw new Error('play-dl 스트림 생성 실패');
+                }
+                
+                console.log(`[${guildId}] play-dl 스트림 생성 성공`);
+                streamMethod = 'play-dl';
+            } catch (playDlError) {
+                console.warn(`[${guildId}] play-dl 실패, ytdl-core로 대체 시도:`, playDlError.message);
+                
+                // ytdl-core로 대체 시도
+                stream = await createYtdlStream(urlToPlay);
+                console.log(`[${guildId}] ytdl-core 스트림 생성 성공`);
+                streamMethod = 'ytdl-core';
             }
             
-            console.log(`[${guildId}] 스트림 생성 성공`);
         } catch (streamError) {
-            console.error(`[${guildId}] 스트림 생성 실패:`, streamError);
+            console.error(`[${guildId}] 모든 스트림 방법 실패:`, streamError);
             console.error(`[${guildId}] 현재 노래 전체 객체:`, JSON.stringify(currentSong, null, 2));
             
             // 재시도 로직 (최대 2회)
@@ -561,6 +598,7 @@ async function playCurrentSong(guildId, retryCount = 0) {
         await setQueueData(guildId, queueData);
         serverQueues.set(guildId, queueData);
 
+        console.log(`[${guildId}] 재생 시작 완료 (방법: ${streamMethod})`);
         return true;
     } catch (error) {
         console.error(`[${guildId}] 음악 재생 실패:`, error);
