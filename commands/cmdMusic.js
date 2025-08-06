@@ -458,12 +458,17 @@ async function connectToVoiceChannel(voiceChannel, guildId) {
  */
 async function playCurrentSong(guildId) {
     try {
-        const queueData = serverQueues.get(guildId);
+        // Firebase에서 최신 큐 데이터 로드
+        let queueData = await getQueueData(guildId);
         const voiceData = voiceConnections.get(guildId);
 
         if (!queueData || !voiceData || queueData.songs.length === 0) {
+            console.log(`[${guildId}] 재생 조건 불만족: queueData=${!!queueData}, voiceData=${!!voiceData}, songs=${queueData?.songs?.length || 0}`);
             return false;
         }
+
+        // 메모리 큐도 업데이트
+        serverQueues.set(guildId, queueData);
 
         const currentSong = queueData.songs[queueData.currentIndex];
         
@@ -490,7 +495,17 @@ async function playCurrentSong(guildId) {
         // play-dl로 오디오 스트림 생성
         let stream;
         try {
-            stream = await play.stream(currentSong.url, {
+            // URL 최종 검증
+            const urlToPlay = currentSong.url;
+            console.log(`[${guildId}] play.stream()에 전달할 URL:`, urlToPlay);
+            console.log(`[${guildId}] URL 타입:`, typeof urlToPlay);
+            console.log(`[${guildId}] URL 유효성 검사:`, play.yt_validate(urlToPlay));
+            
+            if (!urlToPlay || typeof urlToPlay !== 'string') {
+                throw new Error(`잘못된 URL 형식: ${urlToPlay} (타입: ${typeof urlToPlay})`);
+            }
+            
+            stream = await play.stream(urlToPlay, {
                 quality: 2, // 높은 품질
             });
             
@@ -499,6 +514,7 @@ async function playCurrentSong(guildId) {
             }
         } catch (streamError) {
             console.error(`[${guildId}] 스트림 생성 실패:`, streamError);
+            console.error(`[${guildId}] 현재 노래 전체 객체:`, JSON.stringify(currentSong, null, 2));
             // 다음 곡으로 자동 이동
             setTimeout(() => playNextSong(guildId), 1000);
             return false;
@@ -535,7 +551,8 @@ async function playCurrentSong(guildId) {
  */
 async function playNextSong(guildId) {
     try {
-        const queueData = serverQueues.get(guildId);
+        // Firebase에서 최신 큐 데이터 로드
+        let queueData = await getQueueData(guildId);
         
         if (!queueData || queueData.songs.length === 0) {
             // 큐가 비어있으면 재생 정지
@@ -555,6 +572,8 @@ async function playNextSong(guildId) {
 
         await setQueueData(guildId, queueData);
         serverQueues.set(guildId, queueData);
+
+        console.log(`[${guildId}] 다음 곡으로 이동: ${queueData.currentIndex + 1}/${queueData.songs.length}`);
 
         // 다음 곡 재생
         await playCurrentSong(guildId);
