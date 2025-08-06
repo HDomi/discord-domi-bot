@@ -14,6 +14,7 @@ let distube = null;
 
 // 자동 퇴장 타이머 (3분 = 180초)
 const AUTO_LEAVE_TIMEOUT = 3 * 60 * 1000; // 3분
+const autoLeaveTimers = new Map(); // guildId -> timeoutId
 
 /**
  * DisTube 인스턴스를 초기화하는 함수
@@ -24,10 +25,6 @@ function initializeDistube(client) {
     if (distube) return distube;
     
     distube = new DisTube(client, {
-        leaveOnStop: false,
-        leaveOnFinish: false,
-        leaveOnEmpty: true,
-        leaveOnEmptyCooldown: AUTO_LEAVE_TIMEOUT,
         emitNewSongOnly: true,
         emitAddSongWhenCreatingQueue: false,
         emitAddListWhenCreatingQueue: false,
@@ -42,7 +39,6 @@ function initializeDistube(client) {
         },
         searchSongs: 1,
         searchCooldown: 30,
-        emptyCooldown: 0,
         nsfw: false,
     });
     
@@ -57,6 +53,9 @@ function initializeDistube(client) {
 function setupDistubeEvents(distube) {
     distube.on('playSong', (queue, song) => {
         console.log(`[${queue.textChannel.guild.id}] 재생 시작: ${song.name}`);
+        
+        // 자동 퇴장 타이머 취소 (재생 중일 때)
+        cancelAutoLeaveTimer(queue.textChannel.guild.id);
     });
     
     distube.on('addSong', (queue, song) => {
@@ -68,16 +67,69 @@ function setupDistubeEvents(distube) {
     });
     
     distube.on('empty', queue => {
-        console.log(`[${queue.textChannel.guild.id}] 큐가 비어서 자동 퇴장`);
+        console.log(`[${queue.textChannel.guild.id}] 큐가 비어있음`);
+        
+        // 큐가 비었을 때 자동 퇴장 타이머 시작
+        startAutoLeaveTimer(queue.textChannel.guild.id);
     });
     
     distube.on('disconnect', queue => {
         console.log(`[${queue.textChannel.guild.id}] 음성 채널에서 연결 해제`);
+        
+        // 타이머 정리
+        cancelAutoLeaveTimer(queue.textChannel.guild.id);
     });
     
     distube.on('finish', queue => {
         console.log(`[${queue.textChannel.guild.id}] 재생목록 완료`);
+        
+        // 재생 완료 시 자동 퇴장 타이머 시작
+        startAutoLeaveTimer(queue.textChannel.guild.id);
     });
+    
+    distube.on('noRelated', queue => {
+        console.log(`[${queue.textChannel.guild.id}] 관련 곡을 찾을 수 없음`);
+    });
+}
+
+/**
+ * 자동 퇴장 타이머를 시작하는 함수
+ * @param {string} guildId - 길드 ID
+ */
+function startAutoLeaveTimer(guildId) {
+    // 기존 타이머가 있으면 취소
+    cancelAutoLeaveTimer(guildId);
+    
+    console.log(`[${guildId}] 자동 퇴장 타이머 시작 (3분)`);
+    
+    const timerId = setTimeout(() => {
+        console.log(`[${guildId}] 자동 퇴장 실행`);
+        
+        if (distube) {
+            try {
+                distube.leave(guildId);
+            } catch (error) {
+                console.error(`[${guildId}] 자동 퇴장 오류:`, error);
+            }
+        }
+        
+        autoLeaveTimers.delete(guildId);
+    }, AUTO_LEAVE_TIMEOUT);
+    
+    autoLeaveTimers.set(guildId, timerId);
+}
+
+/**
+ * 자동 퇴장 타이머를 취소하는 함수
+ * @param {string} guildId - 길드 ID
+ */
+function cancelAutoLeaveTimer(guildId) {
+    const timerId = autoLeaveTimers.get(guildId);
+    if (timerId) {
+        console.log(`[${guildId}] 자동 퇴장 타이머 취소`);
+        clearTimeout(timerId);
+        autoLeaveTimers.delete(guildId);
+    }
 }
 
 /**
