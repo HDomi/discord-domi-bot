@@ -300,6 +300,11 @@ async function getSongInfo(query) {
             throw new Error('동영상 정보를 가져올 수 없습니다.');
         }
         
+        // URL 유효성 검증 추가
+        if (!songInfo.url || songInfo.url === 'undefined') {
+            throw new Error('유효한 URL을 찾을 수 없습니다.');
+        }
+
         return {
             title: songInfo.title || '제목 없음',
             url: songInfo.url,
@@ -423,6 +428,27 @@ async function playCurrentSong(guildId) {
         
         console.log(`[${guildId}] 재생 시작: ${currentSong.title}`);
 
+        // URL 유효성 검증
+        if (!currentSong.url || currentSong.url === 'undefined' || typeof currentSong.url !== 'string') {
+            console.error(`[${guildId}] 유효하지 않은 URL:`, currentSong.url);
+            // 노래를 다시 검색해서 URL을 갱신
+            try {
+                const updatedSongInfo = await getSongInfo(currentSong.title);
+                currentSong.url = updatedSongInfo.url;
+                
+                // Firebase에 업데이트된 정보 저장
+                await setQueueData(guildId, queueData);
+                serverQueues.set(guildId, queueData);
+                
+                console.log(`[${guildId}] URL 갱신 완료: ${currentSong.title}`);
+            } catch (searchError) {
+                console.error(`[${guildId}] URL 갱신 실패:`, searchError);
+                // 다음 곡으로 자동 이동
+                setTimeout(() => playNextSong(guildId), 1000);
+                return false;
+            }
+        }
+
         // play-dl로 오디오 스트림 생성
         let stream;
         try {
@@ -435,9 +461,33 @@ async function playCurrentSong(guildId) {
             }
         } catch (streamError) {
             console.error(`[${guildId}] 스트림 생성 실패:`, streamError);
-            // 다음 곡으로 자동 이동
-            setTimeout(() => playNextSong(guildId), 1000);
-            return false;
+            
+            // URL이 유효하지 않을 가능성이 있으므로 재검색 시도
+            try {
+                console.log(`[${guildId}] URL 재검색 시도: ${currentSong.title}`);
+                const refreshedSongInfo = await getSongInfo(currentSong.title);
+                currentSong.url = refreshedSongInfo.url;
+                
+                // 새로운 URL로 다시 스트림 생성 시도
+                stream = await play.stream(currentSong.url, {
+                    quality: 2,
+                });
+                
+                if (!stream || !stream.stream) {
+                    throw new Error('재검색 후에도 스트림 생성 실패');
+                }
+                
+                // 성공하면 Firebase에 업데이트된 정보 저장
+                await setQueueData(guildId, queueData);
+                serverQueues.set(guildId, queueData);
+                
+                console.log(`[${guildId}] URL 재검색 및 스트림 생성 성공`);
+            } catch (retryError) {
+                console.error(`[${guildId}] 재검색 후에도 스트림 생성 실패:`, retryError);
+                // 다음 곡으로 자동 이동
+                setTimeout(() => playNextSong(guildId), 1000);
+                return false;
+            }
         }
 
         const resource = createAudioResource(stream.stream, {
