@@ -28,11 +28,28 @@ async function getQueueData(guildId) {
         const dbRef = ref(database, `music/${guildId}/queue`);
         const snapshot = await get(dbRef);
         if (snapshot.exists()) {
-            return snapshot.val();
+            const data = snapshot.val();
+            console.log(`[${guildId}] Firebase에서 큐 데이터 로드:`, {
+                songsCount: data.songs?.length || 0,
+                currentIndex: data.currentIndex || 0,
+                isPlaying: data.isPlaying || false
+            });
+            
+            // songs 배열의 각 노래에 URL이 있는지 확인
+            if (data.songs && data.songs.length > 0) {
+                data.songs.forEach((song, index) => {
+                    if (!song.url) {
+                        console.error(`[${guildId}] 노래 ${index + 1}에 URL이 없습니다:`, song);
+                    }
+                });
+            }
+            
+            return data;
         }
+        console.log(`[${guildId}] Firebase에 큐 데이터가 없습니다. 기본값 반환.`);
         return { songs: [], currentIndex: 0, isPlaying: false };
     } catch (error) {
-        console.error('큐 데이터 가져오기 실패:', error);
+        console.error(`[${guildId}] 큐 데이터 가져오기 실패:`, error);
         return { songs: [], currentIndex: 0, isPlaying: false };
     }
 }
@@ -44,9 +61,26 @@ async function getQueueData(guildId) {
  */
 async function setQueueData(guildId, queueData) {
     try {
+        // URL이 없는 노래들을 필터링
+        if (queueData.songs && queueData.songs.length > 0) {
+            const originalCount = queueData.songs.length;
+            queueData.songs = queueData.songs.filter(song => song.url);
+            const filteredCount = queueData.songs.length;
+            
+            if (originalCount !== filteredCount) {
+                console.log(`[${guildId}] URL이 없는 노래 ${originalCount - filteredCount}개를 제거했습니다.`);
+                
+                // currentIndex 조정
+                if (queueData.currentIndex >= queueData.songs.length) {
+                    queueData.currentIndex = Math.max(0, queueData.songs.length - 1);
+                }
+            }
+        }
+        
         await set(ref(database, `music/${guildId}/queue`), queueData);
+        console.log(`[${guildId}] 큐 데이터 저장 완료. 노래 ${queueData.songs.length}개`);
     } catch (error) {
-        console.error('큐 데이터 저장 실패:', error);
+        console.error(`[${guildId}] 큐 데이터 저장 실패:`, error);
     }
 }
 
@@ -56,17 +90,29 @@ async function setQueueData(guildId, queueData) {
  * @param {object} songData - 노래 데이터
  */
 async function addSongToQueue(guildId, songData) {
+    // URL 검증
+    if (!songData.url) {
+        console.error(`[${guildId}] 노래 추가 실패: URL이 없습니다. songData:`, songData);
+        throw new Error('노래 URL이 없습니다.');
+    }
+    
+    console.log(`[${guildId}] 노래 추가: ${songData.title} (URL: ${songData.url})`);
+    
     const queueData = await getQueueData(guildId);
-    queueData.songs.push({
+    const newSong = {
         title: songData.title,
         url: songData.url,
         duration: songData.duration,
         thumbnail: songData.thumbnail,
         addedBy: songData.addedBy,
         addedAt: Date.now()
-    });
+    };
+    
+    queueData.songs.push(newSong);
     await setQueueData(guildId, queueData);
     serverQueues.set(guildId, queueData);
+    
+    console.log(`[${guildId}] 노래 추가 완료. 현재 큐 크기: ${queueData.songs.length}`);
 }
 
 /**
@@ -421,7 +467,25 @@ async function playCurrentSong(guildId) {
 
         const currentSong = queueData.songs[queueData.currentIndex];
         
-        console.log(`[${guildId}] 재생 시작: ${currentSong.title}`);
+        // URL 검증 및 디버깅
+        if (!currentSong.url) {
+            console.error(`[${guildId}] URL이 없습니다. currentSong:`, currentSong);
+            
+            // Firebase에서 데이터를 다시 로드해보기
+            const freshQueueData = await getQueueData(guildId);
+            if (freshQueueData.songs.length > 0 && freshQueueData.songs[queueData.currentIndex]?.url) {
+                console.log(`[${guildId}] Firebase에서 데이터를 다시 로드했습니다.`);
+                serverQueues.set(guildId, freshQueueData);
+                return await playCurrentSong(guildId); // 재귀 호출
+            } else {
+                console.error(`[${guildId}] Firebase에서도 URL을 찾을 수 없습니다.`);
+                // 다음 곡으로 자동 이동
+                setTimeout(() => playNextSong(guildId), 1000);
+                return false;
+            }
+        }
+        
+        console.log(`[${guildId}] 재생 시작: ${currentSong.title} (URL: ${currentSong.url})`);
 
         // play-dl로 오디오 스트림 생성
         let stream;
