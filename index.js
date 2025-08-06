@@ -24,14 +24,15 @@ const client = new Client({ intents: [
 client.once(Events.ClientReady, readyClient => {
     console.log(`${readyClient.user.tag} 실행완료`);
     
-    // 음악 봇의 음성 상태 이벤트 리스너 설정
+    // DisTube 음악 봇 초기화
     try {
         const musicCommand = require('./commands/cmdMusic');
-        if (musicCommand.setupVoiceStateListener) {
-            musicCommand.setupVoiceStateListener(client);
+        if (musicCommand.initializeDistube) {
+            musicCommand.initializeDistube(client);
+            console.log('DisTube 음악 시스템이 초기화되었습니다.');
         }
     } catch (error) {
-        console.error('음성 상태 이벤트 리스너 설정 실패:', error);
+        console.error('DisTube 초기화 실패:', error);
     }
 });
 

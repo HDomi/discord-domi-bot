@@ -1,7 +1,6 @@
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, EmbedBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js')
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, getVoiceConnection } = require('@discordjs/voice')
-const play = require('play-dl')
-const ytdl = require('ytdl-core')
+const { DisTube } = require('distube')
+const { YtDlpPlugin } = require('@distube/yt-dlp')
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, remove, push, child } = require('firebase/database');
 const firebaseConfig = require('../config/firebaseConfig');
@@ -10,14 +9,76 @@ const firebaseConfig = require('../config/firebaseConfig');
 const firebaseApp = initializeApp(firebaseConfig);
 const database = getDatabase(firebaseApp);
 
-// 서버별 큐 관리 (메모리)
-const serverQueues = new Map(); // guildId -> { songs: [], currentIndex: 0, isPlaying: false }
-
-// 서버별 음성 연결 및 플레이어 관리
-const voiceConnections = new Map(); // guildId -> { connection, player, isConnected: boolean, leaveTimer: timeout }
+// DisTube 인스턴스 (전역에서 하나만 사용)
+let distube = null;
 
 // 자동 퇴장 타이머 (3분 = 180초)
 const AUTO_LEAVE_TIMEOUT = 3 * 60 * 1000; // 3분
+
+/**
+ * DisTube 인스턴스를 초기화하는 함수
+ * @param {Client} client - Discord 클라이언트
+ * @returns {DisTube} - DisTube 인스턴스
+ */
+function initializeDistube(client) {
+    if (distube) return distube;
+    
+    distube = new DisTube(client, {
+        leaveOnStop: false,
+        leaveOnFinish: false,
+        leaveOnEmpty: true,
+        leaveOnEmptyCooldown: AUTO_LEAVE_TIMEOUT,
+        emitNewSongOnly: true,
+        emitAddSongWhenCreatingQueue: false,
+        emitAddListWhenCreatingQueue: false,
+        plugins: [
+            new YtDlpPlugin({
+                update: true,
+            })
+        ],
+        ytdlOptions: {
+            quality: 'highestaudio',
+            filter: 'audioonly',
+        },
+        searchSongs: 1,
+        searchCooldown: 30,
+        emptyCooldown: 0,
+        nsfw: false,
+    });
+    
+    setupDistubeEvents(distube);
+    return distube;
+}
+
+/**
+ * DisTube 이벤트를 설정하는 함수
+ * @param {DisTube} distube - DisTube 인스턴스
+ */
+function setupDistubeEvents(distube) {
+    distube.on('playSong', (queue, song) => {
+        console.log(`[${queue.textChannel.guild.id}] 재생 시작: ${song.name}`);
+    });
+    
+    distube.on('addSong', (queue, song) => {
+        console.log(`[${queue.textChannel.guild.id}] 노래 추가: ${song.name}`);
+    });
+    
+    distube.on('error', (textChannel, error) => {
+        console.error(`[${textChannel.guild.id}] DisTube 오류:`, error);
+    });
+    
+    distube.on('empty', queue => {
+        console.log(`[${queue.textChannel.guild.id}] 큐가 비어서 자동 퇴장`);
+    });
+    
+    distube.on('disconnect', queue => {
+        console.log(`[${queue.textChannel.guild.id}] 음성 채널에서 연결 해제`);
+    });
+    
+    distube.on('finish', queue => {
+        console.log(`[${queue.textChannel.guild.id}] 재생목록 완료`);
+    });
+}
 
 /**
  * 서버의 큐 데이터를 Firebase에서 가져오는 함수
@@ -133,31 +194,37 @@ function formatDuration(seconds) {
 }
 
 /**
- * 음악 플레이어 임베드를 생성하는 함수
- * @param {object} queueData - 큐 데이터
+ * DisTube 기반 음악 플레이어 임베드를 생성하는 함수
+ * @param {string} guildId - 길드 ID
  * @param {string} guildName - 길드 이름
  * @returns {EmbedBuilder} - 음악 플레이어 임베드
  */
-function createMusicPlayerEmbed(queueData, guildName) {
+function createMusicPlayerEmbed(guildId, guildName) {
     const embed = new EmbedBuilder()
         .setColor(0x1DB954)
         .setTitle('🎵 음악 플레이어')
         .setTimestamp();
 
-    if (queueData.songs.length === 0) {
+    if (!distube) {
+        embed.setDescription('DisTube가 초기화되지 않았습니다.');
+        return embed;
+    }
+
+    const queue = distube.getQueue(guildId);
+    if (!queue || !queue.songs || queue.songs.length === 0) {
         embed.setDescription('재생 목록이 비어있습니다.\n`/노래 추가` 명령어로 노래를 추가해보세요!');
         embed.setThumbnail('https://i.imgur.com/X8HLvgQ.png'); // 기본 이미지
         return embed;
     }
 
-    const currentSong = queueData.songs[queueData.currentIndex];
-    const statusIcon = queueData.isPlaying ? '▶️' : '⏸️';
+    const currentSong = queue.songs[0];
+    const statusIcon = queue.playing ? '▶️' : '⏸️';
     
     embed.setDescription(`${statusIcon} **현재 재생 중**`)
         .addFields(
             { 
                 name: '🎵 제목', 
-                value: `**${currentSong.title}**`, 
+                value: `**${currentSong.name}**`, 
                 inline: false 
             },
             { 
@@ -167,12 +234,12 @@ function createMusicPlayerEmbed(queueData, guildName) {
             },
             { 
                 name: '👤 추가한 사람', 
-                value: `<@${currentSong.addedBy}>`, 
+                value: `<@${currentSong.user.id}>`, 
                 inline: true 
             },
             { 
                 name: '📋 큐 정보', 
-                value: `${queueData.currentIndex + 1} / ${queueData.songs.length}곡`, 
+                value: `1 / ${queue.songs.length}곡`, 
                 inline: true 
             }
         );
@@ -185,13 +252,15 @@ function createMusicPlayerEmbed(queueData, guildName) {
 }
 
 /**
- * 음악 플레이어 컨트롤 버튼을 생성하는 함수
- * @param {object} queueData - 큐 데이터
+ * DisTube 기반 음악 플레이어 컨트롤 버튼을 생성하는 함수
+ * @param {string} guildId - 길드 ID
  * @returns {Array<ActionRowBuilder>} - 컨트롤 버튼들
  */
-function createMusicControlButtons(queueData) {
-    const hasQueue = queueData.songs.length > 0;
-    const hasMultipleSongs = queueData.songs.length > 1;
+function createMusicControlButtons(guildId) {
+    const queue = distube ? distube.getQueue(guildId) : null;
+    const hasQueue = queue && queue.songs && queue.songs.length > 0;
+    const hasMultipleSongs = hasQueue && queue.songs.length > 1;
+    const isPlaying = hasQueue && queue.playing;
     
     const firstRow = new ActionRowBuilder()
         .addComponents(
@@ -203,9 +272,9 @@ function createMusicControlButtons(queueData) {
                 .setDisabled(!hasMultipleSongs),
             new ButtonBuilder()
                 .setCustomId('music_play_pause')
-                .setEmoji(queueData.isPlaying ? '⏸️' : '▶️')
-                .setLabel(queueData.isPlaying ? '  일시정지  ' : '  재 생  ')
-                .setStyle(queueData.isPlaying ? ButtonStyle.Secondary : ButtonStyle.Success)
+                .setEmoji(isPlaying ? '⏸️' : '▶️')
+                .setLabel(isPlaying ? '  일시정지  ' : '  재 생  ')
+                .setStyle(isPlaying ? ButtonStyle.Secondary : ButtonStyle.Success)
                 .setDisabled(!hasQueue),
             new ButtonBuilder()
                 .setCustomId('music_next')
@@ -249,6 +318,12 @@ function createMusicControlButtons(queueData) {
                 .setEmoji('🧹')
                 .setLabel('  전체 삭제  ')
                 .setStyle(ButtonStyle.Danger)
+                .setDisabled(!hasQueue),
+            new ButtonBuilder()
+                .setCustomId('music_leave')
+                .setEmoji('👋')
+                .setLabel('  나가기  ')
+                .setStyle(ButtonStyle.Danger)
                 .setDisabled(!hasQueue)
         );
 
@@ -256,40 +331,46 @@ function createMusicControlButtons(queueData) {
 }
 
 /**
- * 재생목록 임베드를 생성하는 함수
- * @param {object} queueData - 큐 데이터
+ * DisTube 기반 재생목록 임베드를 생성하는 함수
+ * @param {string} guildId - 길드 ID
  * @param {number} page - 페이지 번호
  * @returns {EmbedBuilder} - 재생목록 임베드
  */
-function createQueueEmbed(queueData, page = 0) {
+function createQueueEmbed(guildId, page = 0) {
     const embed = new EmbedBuilder()
         .setColor(0x1DB954)
         .setTitle('📋 재생목록')
         .setTimestamp();
 
-    if (queueData.songs.length === 0) {
+    if (!distube) {
+        embed.setDescription('DisTube가 초기화되지 않았습니다.');
+        return embed;
+    }
+
+    const queue = distube.getQueue(guildId);
+    if (!queue || !queue.songs || queue.songs.length === 0) {
         embed.setDescription('재생목록이 비어있습니다.');
         return embed;
     }
 
     const songsPerPage = 10;
     const startIndex = page * songsPerPage;
-    const endIndex = Math.min(startIndex + songsPerPage, queueData.songs.length);
-    const totalPages = Math.ceil(queueData.songs.length / songsPerPage);
+    const endIndex = Math.min(startIndex + songsPerPage, queue.songs.length);
+    const totalPages = Math.ceil(queue.songs.length / songsPerPage);
 
     let queueList = '';
     for (let i = startIndex; i < endIndex; i++) {
-        const song = queueData.songs[i];
-        const isCurrentSong = i === queueData.currentIndex;
+        const song = queue.songs[i];
+        const isCurrentSong = i === 0; // DisTube에서는 첫 번째 곡이 현재 재생 중
         const icon = isCurrentSong ? '🎵' : '📄';
         const status = isCurrentSong ? ' **[재생 중]**' : '';
         
-        queueList += `${icon} **${i + 1}.** ${song.title} (${formatDuration(song.duration)})${status}\n`;
+        queueList += `${icon} **${i + 1}.** ${song.name} (${formatDuration(song.duration)})${status}\n`;
     }
 
     embed.setDescription(queueList)
         .setFooter({ 
-            text: `페이지 ${page + 1}/${totalPages} | 총 ${queueData.songs.length}곡` 
+            text: `페이지 ${page + 1}/${totalPages} | 총 ${queue.songs.length}곡` 
         });
 
     return embed;
@@ -922,7 +1003,7 @@ function setupVoiceStateListener(client) {
 }
 
 module.exports = {
-    setupVoiceStateListener, // 이벤트 리스너 설정 함수 export
+    initializeDistube, // DisTube 초기화 함수 export
     data: new SlashCommandBuilder()
         .setName('노래')
         .setDescription('음악 플레이어를 조작합니다')
@@ -1003,6 +1084,11 @@ module.exports = {
             });
         }
 
+        // DisTube 초기화 확인
+        if (!distube) {
+            distube = initializeDistube(interaction.client);
+        }
+
         // 음성 채널 확인
         const voiceChannel = interaction.member.voice.channel;
         if (!voiceChannel) {
@@ -1024,38 +1110,30 @@ module.exports = {
         }
 
         const subcommand = interaction.options.getSubcommand();
-        const guildId = interaction.guild.id;
-
-        // 큐 데이터 로드
-        let queueData = serverQueues.get(guildId);
-        if (!queueData) {
-            queueData = await getQueueData(guildId);
-            serverQueues.set(guildId, queueData);
-        }
 
         try {
             if (subcommand === '플레이어') {
-                await handlePlayerCommand(interaction, queueData, voiceChannel);
+                await handlePlayerCommand(interaction);
             } else if (subcommand === '추가') {
-                await handleAddCommand(interaction, queueData, voiceChannel);
+                await handleAddCommand(interaction);
             } else if (subcommand === '재생') {
-                await handlePlayCommand(interaction, queueData, voiceChannel);
+                await handlePlayCommand(interaction);
             } else if (subcommand === '일시정지') {
-                await handlePauseCommand(interaction, queueData);
+                await handlePauseCommand(interaction);
             } else if (subcommand === '정지') {
-                await handleStopCommand(interaction, queueData);
+                await handleStopCommand(interaction);
             } else if (subcommand === '스킵') {
-                await handleSkipCommand(interaction, queueData);
+                await handleSkipCommand(interaction);
             } else if (subcommand === '목록') {
-                await handleQueueCommand(interaction, queueData);
+                await handleQueueCommand(interaction);
             } else if (subcommand === '삭제') {
-                await handleRemoveCommand(interaction, queueData);
+                await handleRemoveCommand(interaction);
             } else if (subcommand === '다음곡') {
-                await handleNextCommand(interaction, queueData);
+                await handleNextCommand(interaction);
             } else if (subcommand === '이전곡') {
-                await handlePreviousCommand(interaction, queueData);
+                await handlePreviousCommand(interaction);
             } else if (subcommand === '나가기') {
-                await handleLeaveCommand(interaction, queueData);
+                await handleLeaveCommand(interaction);
             }
         } catch (error) {
             console.error('음악 명령어 실행 오류:', error);
@@ -1078,11 +1156,11 @@ module.exports = {
 };
 
 /**
- * 플레이어 명령어 처리 함수
+ * DisTube 기반 플레이어 명령어 처리 함수
  */
-async function handlePlayerCommand(interaction, queueData, voiceChannel) {
-    const embed = createMusicPlayerEmbed(queueData, interaction.guild.name);
-    const buttons = createMusicControlButtons(queueData);
+async function handlePlayerCommand(interaction) {
+    const embed = createMusicPlayerEmbed(interaction.guild.id, interaction.guild.name);
+    const buttons = createMusicControlButtons(interaction.guild.id);
 
     await interaction.reply({
         embeds: [embed],
@@ -1097,24 +1175,12 @@ async function handlePlayerCommand(interaction, queueData, voiceChannel) {
     });
 
     collector.on('collect', async i => {
-        if (i.isButton()) {
-            await handleMusicButtonInteraction(i, queueData);
-        } else if (i.isStringSelectMenu() && i.customId === 'music_remove_select') {
-            await handleRemoveSelectInteraction(i, queueData);
-        }
-    });
-
-    // 모달 제출 이벤트 처리
-    const modalFilter = i => i.customId === 'music_add_modal' && i.user.id === interaction.user.id;
-    const modalCollector = interaction.client.on('interactionCreate', async i => {
-        if (i.isModalSubmit() && modalFilter(i)) {
-            await handleAddModalSubmit(i, queueData);
-        }
+        await handleMusicButtonInteraction(i);
     });
 
     collector.on('end', () => {
         // 만료된 버튼들 비활성화
-        const disabledButtons = createMusicControlButtons(queueData).map(row => {
+        const disabledButtons = createMusicControlButtons(interaction.guild.id).map(row => {
             const newRow = new ActionRowBuilder();
             row.components.forEach(button => {
                 newRow.addComponents(ButtonBuilder.from(button).setDisabled(true));
@@ -1123,81 +1189,193 @@ async function handlePlayerCommand(interaction, queueData, voiceChannel) {
         });
 
         reply.edit({ components: disabledButtons }).catch(() => {});
-        
-        // 모달 이벤트 리스너 제거
-        interaction.client.removeListener('interactionCreate', modalCollector);
     });
 }
 
 /**
- * 노래 추가 명령어 처리 함수
+ * DisTube 기반 노래 추가 명령어 처리 함수
  */
-async function handleAddCommand(interaction, queueData, voiceChannel) {
+async function handleAddCommand(interaction) {
     const query = interaction.options.getString('노래');
+    const voiceChannel = interaction.member.voice.channel;
     
     await interaction.deferReply();
 
     try {
-        const songInfo = await getSongInfo(query);
+        console.log(`[${interaction.guild.id}] DisTube로 노래 추가 시도: ${query}`);
         
-        await addSongToQueue(interaction.guild.id, {
-            ...songInfo,
-            addedBy: interaction.user.id
+        // DisTube로 노래 재생/추가
+        const song = await distube.play(voiceChannel, query, {
+            textChannel: interaction.channel,
+            member: interaction.member
         });
 
-        // 음성 채널 연결 확인 및 연결
-        let voiceData = voiceConnections.get(interaction.guild.id);
-        const updatedQueueData = await getQueueData(interaction.guild.id);
-        const isFirstSong = updatedQueueData.songs.length === 1;
-
-        if (!voiceData || !voiceData.isConnected) {
-            try {
-                voiceData = await connectToVoiceChannel(voiceChannel, interaction.guild.id);
-            } catch (error) {
-                console.error('음성 채널 연결 실패:', error);
-                await interaction.editReply({
-                    content: '❌ 음성 채널에 연결할 수 없습니다.'
-                });
-                return;
-            }
-        }
-
-        // 첫 번째 노래이고 재생 중이 아니라면 자동 재생
-        if (isFirstSong && !updatedQueueData.isPlaying) {
-            await playCurrentSong(interaction.guild.id);
-        }
-
+        // 노래 추가 성공 메시지
         const embed = new EmbedBuilder()
             .setColor(0x00ff00)
             .setTitle('✅ 노래가 추가되었습니다!')
-            .setDescription(`**${songInfo.title}**`)
+            .setDescription(`**${song.name}**`)
             .addFields(
-                { name: '재생 시간', value: formatDuration(songInfo.duration), inline: true },
+                { name: '재생 시간', value: formatDuration(song.duration), inline: true },
                 { name: '추가한 사람', value: `<@${interaction.user.id}>`, inline: true },
-                { name: '재생목록 위치', value: `${updatedQueueData.songs.length}번째`, inline: true }
+                { name: '채널', value: song.uploader?.name || '알 수 없음', inline: true }
             )
-            .setThumbnail(songInfo.thumbnail)
+            .setThumbnail(song.thumbnail)
             .setTimestamp();
 
-        if (isFirstSong) {
+        // 큐 상태에 따른 메시지 추가
+        const queue = distube.getQueue(interaction.guild.id);
+        if (queue && queue.songs.length === 1) {
             embed.setFooter({ text: '🎵 재생을 시작합니다!' });
+        } else if (queue) {
+            embed.addFields({
+                name: '재생목록 위치',
+                value: `${queue.songs.length}번째`,
+                inline: true
+            });
         }
 
         await interaction.editReply({ embeds: [embed] });
+        
     } catch (error) {
-        console.error('노래 추가 오류:', error);
-        await interaction.editReply({
-            content: '❌ 노래를 추가하는 중 오류가 발생했습니다.'
-        });
+        console.error(`[${interaction.guild.id}] DisTube 노래 추가 오류:`, error);
+        
+        let errorMessage = '❌ 노래를 추가하는 중 오류가 발생했습니다.';
+        if (error.message.includes('No result')) {
+            errorMessage = '❌ 검색 결과를 찾을 수 없습니다. 다른 검색어를 시도해보세요.';
+        } else if (error.message.includes('age')) {
+            errorMessage = '❌ 연령 제한이 있는 동영상입니다.';
+        }
+        
+        await interaction.editReply({ content: errorMessage });
     }
 }
 
 /**
- * 재생목록 명령어 처리 함수
+ * DisTube 기반 재생목록 명령어 처리 함수
  */
-async function handleQueueCommand(interaction, queueData) {
-    const embed = createQueueEmbed(queueData, 0);
+async function handleQueueCommand(interaction) {
+    const embed = createQueueEmbed(interaction.guild.id, 0);
     await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+/**
+ * DisTube 기반 재생/일시정지 명령어 처리 함수
+ */
+async function handlePlayCommand(interaction) {
+    try {
+        const queue = distube.getQueue(interaction.guild.id);
+        if (!queue) {
+            return await interaction.reply({
+                content: '❌ 재생할 노래가 없습니다. `/노래 추가` 명령어로 노래를 먼저 추가해주세요.',
+                ephemeral: true
+            });
+        }
+
+        if (queue.paused) {
+            distube.resume(interaction.guild.id);
+            await interaction.reply({ content: '▶️ 재생을 재개했습니다.' });
+        } else {
+            await interaction.reply({ content: '🎵 이미 재생 중입니다.' });
+        }
+    } catch (error) {
+        await interaction.reply({ content: '❌ 재생 중 오류가 발생했습니다.', ephemeral: true });
+    }
+}
+
+/**
+ * DisTube 기반 일시정지 명령어 처리 함수
+ */
+async function handlePauseCommand(interaction) {
+    try {
+        const queue = distube.getQueue(interaction.guild.id);
+        if (!queue) {
+            return await interaction.reply({
+                content: '❌ 재생 중인 노래가 없습니다.',
+                ephemeral: true
+            });
+        }
+
+        if (queue.paused) {
+            await interaction.reply({ content: '❌ 이미 일시정지 상태입니다.', ephemeral: true });
+        } else {
+            distube.pause(interaction.guild.id);
+            await interaction.reply({ content: '⏸️ 재생을 일시정지했습니다.' });
+        }
+    } catch (error) {
+        await interaction.reply({ content: '❌ 일시정지 중 오류가 발생했습니다.', ephemeral: true });
+    }
+}
+
+/**
+ * DisTube 기반 정지 명령어 처리 함수
+ */
+async function handleStopCommand(interaction) {
+    try {
+        const queue = distube.getQueue(interaction.guild.id);
+        if (!queue) {
+            return await interaction.reply({
+                content: '❌ 재생 중인 노래가 없습니다.',
+                ephemeral: true
+            });
+        }
+
+        distube.stop(interaction.guild.id);
+        await interaction.reply({ content: '⏹️ 재생을 정지하고 재생목록을 초기화했습니다.' });
+    } catch (error) {
+        await interaction.reply({ content: '❌ 정지 중 오류가 발생했습니다.', ephemeral: true });
+    }
+}
+
+/**
+ * DisTube 기반 스킵 명령어 처리 함수
+ */
+async function handleSkipCommand(interaction) {
+    try {
+        const queue = distube.getQueue(interaction.guild.id);
+        if (!queue) {
+            return await interaction.reply({
+                content: '❌ 재생 중인 노래가 없습니다.',
+                ephemeral: true
+            });
+        }
+
+        if (queue.songs.length === 1) {
+            return await interaction.reply({
+                content: '❌ 스킵할 다음 곡이 없습니다.',
+                ephemeral: true
+            });
+        }
+
+        const currentSong = queue.songs[0];
+        distube.skip(interaction.guild.id);
+        
+        await interaction.reply({ 
+            content: `⏭️ **${currentSong.name}**을(를) 스킵했습니다.` 
+        });
+    } catch (error) {
+        await interaction.reply({ content: '❌ 스킵 중 오류가 발생했습니다.', ephemeral: true });
+    }
+}
+
+/**
+ * DisTube 기반 나가기 명령어 처리 함수
+ */
+async function handleLeaveCommand(interaction) {
+    try {
+        const queue = distube.getQueue(interaction.guild.id);
+        if (!queue) {
+            return await interaction.reply({
+                content: '❌ 음성 채널에 연결되어 있지 않습니다.',
+                ephemeral: true
+            });
+        }
+
+        distube.leave(interaction.guild.id);
+        await interaction.reply({ content: '👋 음성 채널에서 나갔습니다.' });
+    } catch (error) {
+        await interaction.reply({ content: '❌ 나가기 중 오류가 발생했습니다.', ephemeral: true });
+    }
 }
 
 /**
@@ -1290,140 +1468,95 @@ async function handlePreviousCommand(interaction, queueData) {
 }
 
 /**
- * 음악 버튼 상호작용 처리 함수
+ * DisTube 기반 음악 버튼 상호작용 처리 함수
  */
-async function handleMusicButtonInteraction(interaction, queueData) {
+async function handleMusicButtonInteraction(interaction) {
     const guildId = interaction.guild.id;
 
-    if (interaction.customId === 'music_add_song') {
-        // 노래 추가 모달 표시
-        const modal = new ModalBuilder()
-            .setCustomId('music_add_modal')
-            .setTitle('🎵 노래 추가');
+    try {
+        if (interaction.customId === 'music_add_song') {
+            // 노래 추가 모달 표시
+            const modal = new ModalBuilder()
+                .setCustomId('music_add_modal')
+                .setTitle('🎵 노래 추가');
 
-        const songInput = new TextInputBuilder()
-            .setCustomId('song_input')
-            .setLabel('YouTube URL 또는 검색어')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('예: https://www.youtube.com/watch?v=... 또는 "아이유 좋은날"')
-            .setRequired(true)
-            .setMaxLength(200);
+            const songInput = new TextInputBuilder()
+                .setCustomId('song_input')
+                .setLabel('YouTube URL 또는 검색어')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('예: https://www.youtube.com/watch?v=... 또는 "아이유 좋은날"')
+                .setRequired(true)
+                .setMaxLength(200);
 
-        const firstRow = new ActionRowBuilder().addComponents(songInput);
-        modal.addComponents(firstRow);
+            const firstRow = new ActionRowBuilder().addComponents(songInput);
+            modal.addComponents(firstRow);
 
-        await interaction.showModal(modal);
-        return; // 모달 표시 후 함수 종료
-        
-    } else if (interaction.customId === 'music_show_queue') {
-        // 재생목록 보기
-        const queueEmbed = createQueueEmbed(queueData, 0);
-        await interaction.reply({ embeds: [queueEmbed], ephemeral: true });
-        return;
-        
-    } else if (interaction.customId === 'music_remove_song') {
-        // 노래 삭제 선택 메뉴 표시
-        if (queueData.songs.length === 0) {
-            await interaction.reply({ 
-                content: '❌ 삭제할 노래가 없습니다.', 
-                ephemeral: true 
-            });
+            await interaction.showModal(modal);
             return;
+            
+        } else if (interaction.customId === 'music_show_queue') {
+            // 재생목록 보기
+            const queueEmbed = createQueueEmbed(guildId, 0);
+            await interaction.reply({ embeds: [queueEmbed], ephemeral: true });
+            return;
+            
+        } else if (interaction.customId === 'music_play_pause') {
+            await interaction.deferUpdate();
+            const queue = distube.getQueue(guildId);
+            if (!queue) return;
+            
+            if (queue.paused) {
+                distube.resume(guildId);
+            } else {
+                distube.pause(guildId);
+            }
+            
+        } else if (interaction.customId === 'music_next') {
+            await interaction.deferUpdate();
+            const queue = distube.getQueue(guildId);
+            if (queue && queue.songs.length > 1) {
+                distube.skip(guildId);
+            }
+            
+        } else if (interaction.customId === 'music_previous') {
+            await interaction.deferUpdate();
+            const queue = distube.getQueue(guildId);
+            if (queue && queue.songs.length > 1) {
+                distube.previous(guildId);
+            }
+            
+        } else if (interaction.customId === 'music_shuffle') {
+            await interaction.deferUpdate();
+            const queue = distube.getQueue(guildId);
+            if (queue && queue.songs.length > 1) {
+                distube.shuffle(guildId);
+            }
+            
+        } else if (interaction.customId === 'music_clear_queue') {
+            await interaction.deferUpdate();
+            distube.stop(guildId);
+            
+        } else if (interaction.customId === 'music_leave') {
+            await interaction.deferUpdate();
+            distube.leave(guildId);
         }
 
-        const options = queueData.songs.map((song, index) => ({
-            label: song.title.length > 25 ? song.title.substring(0, 22) + '...' : song.title,
-            value: index.toString(),
-            description: `재생시간: ${formatDuration(song.duration)} | 추가자: ${song.addedBy}`,
-            emoji: index === queueData.currentIndex ? '🎵' : '📄'
-        }));
+        // UI 업데이트 (모달이 아닌 경우)
+        if (!interaction.customId.includes('modal') && interaction.deferred) {
+            const embed = createMusicPlayerEmbed(guildId, interaction.guild.name);
+            const buttons = createMusicControlButtons(guildId);
 
-        const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId('music_remove_select')
-            .setPlaceholder('삭제할 노래를 선택하세요')
-            .addOptions(options.slice(0, 25)); // Discord 제한으로 최대 25개
-
-        const row = new ActionRowBuilder().addComponents(selectMenu);
-        await interaction.reply({ 
-            content: '🗑️ 삭제할 노래를 선택해주세요:', 
-            components: [row], 
-            ephemeral: true 
-        });
-        return;
+            await interaction.editReply({
+                embeds: [embed],
+                components: buttons
+            });
+        }
+    } catch (error) {
+        console.error(`[${guildId}] 버튼 상호작용 오류:`, error);
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: '❌ 처리 중 오류가 발생했습니다.', ephemeral: true });
+        }
     }
-
-    // 나머지 버튼들은 deferUpdate 필요
-    await interaction.deferUpdate();
-
-    if (interaction.customId === 'music_play_pause') {
-        if (queueData.isPlaying) {
-            pauseMusic(guildId);
-        } else {
-            resumeMusic(guildId);
-            // 재개가 안 되면 새로 재생
-            setTimeout(async () => {
-                const currentQueueData = await getQueueData(guildId);
-                if (!currentQueueData.isPlaying) {
-                    await playCurrentSong(guildId);
-                }
-            }, 100);
-        }
-    } else if (interaction.customId === 'music_next') {
-        if (queueData.songs.length === 0) return;
-        queueData.currentIndex = (queueData.currentIndex + 1) % queueData.songs.length;
-        await setQueueData(guildId, queueData);
-        serverQueues.set(guildId, queueData);
-        // 다음 곡 재생
-        await playCurrentSong(guildId);
-    } else if (interaction.customId === 'music_previous') {
-        if (queueData.songs.length === 0) return;
-        queueData.currentIndex = queueData.currentIndex > 0 
-            ? queueData.currentIndex - 1 
-            : queueData.songs.length - 1;
-        await setQueueData(guildId, queueData);
-        serverQueues.set(guildId, queueData);
-        // 이전 곡 재생
-        await playCurrentSong(guildId);
-    } else if (interaction.customId === 'music_shuffle') {
-        if (queueData.songs.length <= 1) return;
-        
-        // 현재 곡을 제외하고 셔플
-        const currentSong = queueData.songs[queueData.currentIndex];
-        const otherSongs = queueData.songs.filter((_, index) => index !== queueData.currentIndex);
-        
-        // Fisher-Yates 셔플 알고리즘
-        for (let i = otherSongs.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [otherSongs[i], otherSongs[j]] = [otherSongs[j], otherSongs[i]];
-        }
-        
-        queueData.songs = [currentSong, ...otherSongs];
-        queueData.currentIndex = 0;
-        
-        await setQueueData(guildId, queueData);
-        serverQueues.set(guildId, queueData);
-        // 셔플 후 현재 곡 재생
-        await playCurrentSong(guildId);
-    } else if (interaction.customId === 'music_clear_queue') {
-        // 음악 정지
-        stopMusic(guildId);
-        
-        queueData.songs = [];
-        queueData.currentIndex = 0;
-        queueData.isPlaying = false;
-        
-        await setQueueData(guildId, queueData);
-        serverQueues.set(guildId, queueData);
-    }
-
-    // UI 업데이트
-    const embed = createMusicPlayerEmbed(queueData, interaction.guild.name);
-    const buttons = createMusicControlButtons(queueData);
-
-    await interaction.editReply({
-        embeds: [embed],
-        components: buttons
-    });
 }
 
 /**
