@@ -454,9 +454,10 @@ async function connectToVoiceChannel(voiceChannel, guildId) {
 /**
  * 현재 곡을 재생하는 함수
  * @param {string} guildId - 길드 ID
+ * @param {number} retryCount - 재시도 횟수 (기본값: 0)
  * @returns {Promise<boolean>} - 재생 성공 여부
  */
-async function playCurrentSong(guildId) {
+async function playCurrentSong(guildId, retryCount = 0) {
     try {
         // Firebase에서 최신 큐 데이터 로드
         let queueData = await getQueueData(guildId);
@@ -496,27 +497,56 @@ async function playCurrentSong(guildId) {
         let stream;
         try {
             // URL 최종 검증
-            const urlToPlay = currentSong.url;
+            const urlToPlay = String(currentSong.url).trim();
             console.log(`[${guildId}] play.stream()에 전달할 URL:`, urlToPlay);
             console.log(`[${guildId}] URL 타입:`, typeof urlToPlay);
             console.log(`[${guildId}] URL 유효성 검사:`, play.yt_validate(urlToPlay));
             
-            if (!urlToPlay || typeof urlToPlay !== 'string') {
+            if (!urlToPlay || typeof urlToPlay !== 'string' || urlToPlay === 'undefined') {
                 throw new Error(`잘못된 URL 형식: ${urlToPlay} (타입: ${typeof urlToPlay})`);
             }
             
+            // play-dl의 다른 방법으로 스트림 생성 시도
+            console.log(`[${guildId}] 비디오 정보 가져오기 시도...`);
+            const videoInfo = await play.video_info(urlToPlay);
+            console.log(`[${guildId}] 비디오 정보 획득 성공:`, videoInfo.title);
+            
+            console.log(`[${guildId}] 스트림 생성 시도...`);
             stream = await play.stream(urlToPlay, {
-                quality: 2, // 높은 품질
+                quality: 1, // 중간 품질로 변경
+                htmldata: false, // HTML 데이터 사용 안함
+                precache: 0, // 프리캐시 비활성화
             });
             
             if (!stream || !stream.stream) {
                 throw new Error('스트림 생성 실패');
             }
+            
+            console.log(`[${guildId}] 스트림 생성 성공`);
         } catch (streamError) {
             console.error(`[${guildId}] 스트림 생성 실패:`, streamError);
             console.error(`[${guildId}] 현재 노래 전체 객체:`, JSON.stringify(currentSong, null, 2));
-            // 다음 곡으로 자동 이동
-            setTimeout(() => playNextSong(guildId), 1000);
+            
+            // 재시도 로직 (최대 2회)
+            if (retryCount < 2) {
+                console.log(`[${guildId}] 2초 후 재시도... (${retryCount + 1}/2)`);
+                setTimeout(async () => {
+                    try {
+                        console.log(`[${guildId}] 재시도 중... (${retryCount + 1}/2)`);
+                        const retrySuccess = await playCurrentSong(guildId, retryCount + 1);
+                        if (!retrySuccess) {
+                            console.log(`[${guildId}] 재시도 실패, 다음 곡으로 이동`);
+                            playNextSong(guildId);
+                        }
+                    } catch (retryError) {
+                        console.error(`[${guildId}] 재시도 중 오류:`, retryError);
+                        playNextSong(guildId);
+                    }
+                }, 2000);
+            } else {
+                console.log(`[${guildId}] 최대 재시도 횟수 초과, 다음 곡으로 이동`);
+                setTimeout(() => playNextSong(guildId), 1000);
+            }
             return false;
         }
 
