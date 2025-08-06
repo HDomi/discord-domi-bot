@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, EmbedBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js')
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, getVoiceConnection } = require('@discordjs/voice')
-const ytdl = require('ytdl-core')
+const play = require('play-dl')
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, get, set, remove, push, child } = require('firebase/database');
 const firebaseConfig = require('../config/firebaseConfig');
@@ -260,91 +260,83 @@ function extractYouTubeId(url) {
 }
 
 /**
- * YouTube 정보 추출 함수 (ytdl-core 사용)
+ * YouTube 정보 추출 함수 (play-dl 사용)
  * @param {string} query - 검색어 또는 URL
  * @returns {Promise<object>} - 노래 정보
  */
 async function getSongInfo(query) {
-    // ytdl은 상단에서 이미 require됨
-    
     try {
-        // YouTube URL인지 확인
-        const videoId = extractYouTubeId(query);
-        let videoUrl = query;
+        let songInfo;
         
-        if (!videoId) {
-            // 검색어인 경우 YouTube 검색 (간단한 구현)
-            // 실제로는 YouTube Data API v3를 사용하는 것이 좋습니다
-            videoUrl = await searchYouTube(query);
-            if (!videoUrl) {
+        // URL 검증
+        if (play.yt_validate(query) === 'video') {
+            // 유효한 YouTube URL인 경우
+            songInfo = await play.video_info(query);
+        } else if (play.yt_validate(query) === 'playlist') {
+            // 플레이리스트인 경우 첫 번째 곡만 가져오기
+            const playlist = await play.playlist_info(query, { incomplete: true });
+            if (playlist.videos && playlist.videos.length > 0) {
+                songInfo = playlist.videos[0];
+            } else {
+                throw new Error('플레이리스트가 비어있습니다.');
+            }
+        } else {
+            // 검색어인 경우
+            console.log(`[음악봇] YouTube에서 검색: "${query}"`);
+            const searchResults = await play.search(query, { 
+                limit: 1,
+                source: { youtube: 'video' }
+            });
+            
+            if (!searchResults || searchResults.length === 0) {
                 throw new Error('검색 결과를 찾을 수 없습니다.');
             }
+            
+            songInfo = searchResults[0];
+            console.log(`[음악봇] 검색 결과: ${songInfo.title}`);
         }
         
-        // ytdl-core로 비디오 정보 가져오기
-        const videoInfo = await ytdl.getInfo(videoUrl);
-        const videoDetails = videoInfo.videoDetails;
+        if (!songInfo) {
+            throw new Error('동영상 정보를 가져올 수 없습니다.');
+        }
         
         return {
-            title: videoDetails.title,
-            url: videoDetails.video_url,
-            duration: parseInt(videoDetails.lengthSeconds) || 0,
-            thumbnail: videoDetails.thumbnails[videoDetails.thumbnails.length - 1]?.url || 
-                      `https://img.youtube.com/vi/${videoDetails.videoId}/maxresdefault.jpg`,
-            author: videoDetails.author?.name || 'Unknown',
-            viewCount: videoDetails.viewCount || '0'
+            title: songInfo.title || '제목 없음',
+            url: songInfo.url,
+            duration: songInfo.durationInSec || 0,
+            thumbnail: songInfo.thumbnails?.[0]?.url || '',
+            author: songInfo.channel?.name || '알 수 없음',
+            viewCount: songInfo.views || 0
         };
     } catch (error) {
         console.error('YouTube 정보 가져오기 실패:', error);
         
-        // 에러 발생 시 기본값 반환
+        // 마지막 시도: YouTube ID 추출해서 기본 정보 반환
         const videoId = extractYouTubeId(query);
         if (videoId) {
             return {
-                title: '정보를 가져올 수 없는 동영상',
-                url: query,
+                title: `검색어: ${query}`,
+                url: `https://www.youtube.com/watch?v=${videoId}`,
                 duration: 0,
                 thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-                author: 'Unknown',
-                viewCount: '0'
+                author: '알 수 없음',
+                viewCount: 0
             };
         }
         
-        throw new Error('유효하지 않은 YouTube URL이거나 검색 결과를 찾을 수 없습니다.');
+        throw new Error(`노래 정보를 가져오는데 실패했습니다: ${error.message}`);
     }
 }
 
 /**
- * YouTube 검색 함수 (간단한 구현)
+ * YouTube 검색 함수 (play-dl 사용, 현재는 getSongInfo에서 직접 처리하므로 사용하지 않음)
  * @param {string} query - 검색어
  * @returns {Promise<string|null>} - 첫 번째 검색 결과 URL
  */
 async function searchYouTube(query) {
-    // 실제 구현에서는 YouTube Data API v3나 youtube-search-api 같은 패키지 사용 권장
-    // 여기서는 간단한 방법으로 구현 (제한적)
-    
-    try {
-        // 이것은 매우 기본적인 구현입니다. 실제로는 공식 API 사용을 권장합니다.
-        const searchQuery = encodeURIComponent(query);
-        const searchUrl = `https://www.youtube.com/results?search_query=${searchQuery}`;
-        
-        // 실제로는 YouTube Data API를 사용해야 하지만, 
-        // 여기서는 기본적인 형태로만 구현
-        // API 키가 필요한 경우 환경변수로 관리하세요
-        
-        // 임시로 인기있는 노래들 중 하나를 반환 (데모용)
-        const demoVideos = [
-            'https://www.youtube.com/watch?v=dQw4w9WgXcQ', // Rick Roll
-            'https://www.youtube.com/watch?v=kJQP7kiw5Fk', // Despacito
-            'https://www.youtube.com/watch?v=fJ9rUzIMcZQ', // Bohemian Rhapsody
-        ];
-        
-        return demoVideos[Math.floor(Math.random() * demoVideos.length)];
-        
-    } catch (error) {
-        console.error('YouTube 검색 실패:', error);
-        return null;
-    }
+    // 이 함수는 현재 사용되지 않습니다. getSongInfo에서 직접 play.search()를 사용합니다.
+    console.log('searchYouTube 함수가 호출되었지만, 현재는 사용되지 않습니다.');
+    return null;
 }
 
 /**
@@ -431,15 +423,25 @@ async function playCurrentSong(guildId) {
         
         console.log(`[${guildId}] 재생 시작: ${currentSong.title}`);
 
-        // ytdl-core로 오디오 스트림 생성
-        const stream = ytdl(currentSong.url, {
-            filter: 'audioonly',
-            quality: 'highestaudio',
-            highWaterMark: 1 << 25 // 32MB 버퍼
-        });
+        // play-dl로 오디오 스트림 생성
+        let stream;
+        try {
+            stream = await play.stream(currentSong.url, {
+                quality: 2, // 높은 품질
+            });
+            
+            if (!stream || !stream.stream) {
+                throw new Error('스트림 생성 실패');
+            }
+        } catch (streamError) {
+            console.error(`[${guildId}] 스트림 생성 실패:`, streamError);
+            // 다음 곡으로 자동 이동
+            setTimeout(() => playNextSong(guildId), 1000);
+            return false;
+        }
 
-        const resource = createAudioResource(stream, {
-            inputType: 'arbitrary',
+        const resource = createAudioResource(stream.stream, {
+            inputType: stream.type,
         });
 
         voiceData.player.play(resource);
@@ -452,6 +454,13 @@ async function playCurrentSong(guildId) {
         return true;
     } catch (error) {
         console.error(`[${guildId}] 음악 재생 실패:`, error);
+        
+        // 오류 발생 시 다음 곡으로 자동 이동
+        setTimeout(() => {
+            console.log(`[${guildId}] 오류로 인해 다음 곡으로 자동 이동`);
+            playNextSong(guildId);
+        }, 2000);
+        
         return false;
     }
 }
