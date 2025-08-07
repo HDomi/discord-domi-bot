@@ -1,6 +1,13 @@
 # Node.js의 공식 이미지를 기반으로 합니다.
 FROM node:20-alpine AS deps
 
+# FFmpeg 및 필요한 패키지 설치 (Alpine Linux)
+RUN apk add --no-cache \
+    ffmpeg \
+    python3 \
+    make \
+    g++
+
 # 작업 디렉토리를 설정합니다.
 WORKDIR /usr/src/app
 

@@ -21,8 +21,19 @@ const client = new Client({ intents: [
     GatewayIntentBits.DirectMessages, // DM 처리를 위해 추가
 ]});
 
-client.once(Events.ClientReady, readyClient => {
+client.once(Events.ClientReady, async readyClient => {
     console.log(`${readyClient.user.tag} 실행완료`);
+    
+    // Discord Player 초기화
+    try {
+        const musicCommand = client.commands.get('노래');
+        if (musicCommand && musicCommand.initializePlayer) {
+            await musicCommand.initializePlayer(client);
+            console.log('Discord Player 초기화 완료');
+        }
+    } catch (error) {
+        console.error('Discord Player 초기화 실패:', error);
+    }
 });
 
 module.exports = { queue, log };
@@ -217,17 +228,168 @@ async function handleBanpickDM(message) {
 }
 
 client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand()) return;
+    // 슬래시 커맨드 처리
+    if (interaction.isChatInputCommand()) {
+        const command = client.commands.get(interaction.commandName);
 
-    const command = client.commands.get(interaction.commandName);
+        if (!command) return;
 
-    if (!command) return;
+        try {
+            await command.execute(interaction);
+        } catch (error) {
+            console.error(error);
+            await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+        }
+        return;
+    }
 
-    try {
-        await command.execute(interaction);
-    } catch (error) {
-        console.error(error);
-        await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+    // 버튼 처리 (노래 삭제 관련)
+    if (interaction.isButton()) {
+        const customId = interaction.customId;
+        
+        try {
+            const musicCommand = client.commands.get('노래');
+            if (!musicCommand) return;
+
+            // 노래 선택/해제 토글 버튼
+            if (customId.startsWith('toggle_song_')) {
+                const parts = customId.split('_');
+                const guildId = parts[2];
+                const songIndex = parseInt(parts[3]);
+                
+                // 현재 임베드에서 선택된 노래들 추출
+                const embed = interaction.message.embeds[0];
+                const fields = embed.fields || [];
+                let selectedSongs = [];
+                
+                // 각 필드에서 ✅ 상태인 노래들의 인덱스 추출
+                fields.forEach(field => {
+                    if (field.value.includes('✅')) {
+                        // 필드 이름에서 번호 추출 (예: "1번" -> 0)
+                        const match = field.name.match(/(\d+)번/);
+                        if (match) {
+                            const index = parseInt(match[1]) - 1;
+                            selectedSongs.push(index);
+                        }
+                    }
+                });
+                
+                // 현재 페이지 정보 읽어오기
+                const footer = embed.footer?.text || '';
+                const pageMatch = footer.match(/페이지 (\d+)\/(\d+)/);
+                const currentPage = pageMatch ? parseInt(pageMatch[1]) - 1 : 0;
+                
+                // 토글 처리
+                if (selectedSongs.includes(songIndex)) {
+                    selectedSongs = selectedSongs.filter(index => index !== songIndex);
+                } else {
+                    selectedSongs.push(songIndex);
+                }
+                
+                // 페이지 다시 표시
+                const queueData = await musicCommand.getQueueData(guildId);
+                await musicCommand.showRemovePage(interaction, queueData, currentPage, selectedSongs);
+                return;
+            }
+
+            // 이전 페이지 버튼
+            if (customId.startsWith('remove_prev_')) {
+                const parts = customId.split('_');
+                const guildId = parts[2];
+                const currentPage = parseInt(parts[3]);
+                const selectedSongs = parts[4] ? parts[4].split(',').map(Number).filter(n => !isNaN(n)) : [];
+                
+                const queueData = await musicCommand.getQueueData(guildId);
+                await musicCommand.showRemovePage(interaction, queueData, currentPage - 1, selectedSongs);
+                return;
+            }
+
+            // 다음 페이지 버튼
+            if (customId.startsWith('remove_next_')) {
+                const parts = customId.split('_');
+                const guildId = parts[2];
+                const currentPage = parseInt(parts[3]);
+                const selectedSongs = parts[4] ? parts[4].split(',').map(Number).filter(n => !isNaN(n)) : [];
+                
+                const queueData = await musicCommand.getQueueData(guildId);
+                await musicCommand.showRemovePage(interaction, queueData, currentPage + 1, selectedSongs);
+                return;
+            }
+
+            // 삭제 실행 버튼
+            if (customId.startsWith('execute_remove_')) {
+                const parts = customId.split('_');
+                const guildId = parts[2];
+                const selectedSongs = parts[3] ? parts[3].split(',').map(Number).filter(n => !isNaN(n)) : [];
+                
+                if (selectedSongs.length === 0) {
+                    await interaction.reply({
+                        content: '❌ 선택된 노래가 없습니다.',
+                        ephemeral: true
+                    });
+                    return;
+                }
+
+                const result = await musicCommand.removeMultipleSongsFromQueue(guildId, selectedSongs);
+                
+                if (result.success) {
+                    const embed = {
+                        color: 0xff0000,
+                        title: '🗑️ 노래가 삭제되었습니다',
+                        description: `**${result.removedCount}곡**이 삭제되었습니다.\n\n남은 노래: ${result.remainingSongs}곡`,
+                        fields: result.removedSongs.slice(0, 5).map((song, index) => ({
+                            name: `삭제된 노래 ${index + 1}`,
+                            value: `**${song.title}** - ${song.uploader}`,
+                            inline: false
+                        })),
+                        timestamp: new Date().toISOString()
+                    };
+
+                    if (result.removedCount > 5) {
+                        embed.fields.push({
+                            name: '기타',
+                            value: `외 ${result.removedCount - 5}곡이 더 삭제되었습니다.`,
+                            inline: false
+                        });
+                    }
+
+                    await interaction.update({
+                        embeds: [embed],
+                        components: []
+                    });
+                } else {
+                    await interaction.reply({
+                        content: `❌ 노래 삭제 중 오류가 발생했습니다: ${result.error}`,
+                        ephemeral: true
+                    });
+                }
+                return;
+            }
+
+            // 취소 버튼
+            if (customId.startsWith('cancel_remove_')) {
+                const embed = {
+                    color: 0x999999,
+                    title: '❌ 노래 삭제가 취소되었습니다',
+                    description: '삭제 작업이 취소되었습니다.',
+                    timestamp: new Date().toISOString()
+                };
+
+                await interaction.update({
+                    embeds: [embed],
+                    components: []
+                });
+                return;
+            }
+
+        } catch (error) {
+            console.error('버튼 처리 오류:', error);
+            await interaction.reply({
+                content: '❌ 처리 중 오류가 발생했습니다.',
+                ephemeral: true
+            });
+        }
+        return;
     }
 });
 
