@@ -356,9 +356,10 @@ function createTeamSelectMenu(teams, customId, placeholder) {
  * 팀 편집 메뉴 임베드를 생성하는 함수
  * @param {string} teamName - 팀 이름
  * @param {Map} teams - 팀 데이터
+ * @param {Guild} guild - 길드 객체 (서버 내 이름 가져오기 위함)
  * @returns {EmbedBuilder} - 팀 편집 메뉴 임베드
  */
-function createTeamEditEmbed(teamName, teams) {
+function createTeamEditEmbed(teamName, teams, guild) {
     const teamData = teams.get(teamName)
     if (!teamData) {
         return new EmbedBuilder()
@@ -367,9 +368,20 @@ function createTeamEditEmbed(teamName, teams) {
             .setDescription('팀 정보를 찾을 수 없습니다.')
     }
 
-    const memberList = Array.from(teamData.members).map(userId => `<@${userId}>`).join(', ') || '없음'
+    // 멤버 목록을 서버 내 이름으로 표시
+    const memberList = Array.from(teamData.members).map(userId => {
+        const member = guild.members.cache.get(userId)
+        return member ? (member.displayName || member.user.globalName || member.user.username) : `<@${userId}>`
+    }).join(', ') || '없음'
+    
     const voiceChannel = teamData.voiceChannelId ? `<#${teamData.voiceChannelId}>` : '설정 안됨'
-    const captain = teamData.captain ? `<@${teamData.captain}>` : '설정 안됨'
+    
+    // 팀장도 서버 내 이름으로 표시
+    let captain = '설정 안됨'
+    if (teamData.captain) {
+        const captainMember = guild.members.cache.get(teamData.captain)
+        captain = captainMember ? (captainMember.displayName || captainMember.user.globalName || captainMember.user.username) : `<@${teamData.captain}>`
+    }
 
     return new EmbedBuilder()
         .setColor(0x426cf5)
@@ -428,9 +440,10 @@ function createTeamEditButtons(teamName) {
 /**
  * 팀 목록 임베드를 생성하는 함수
  * @param {Map} teams - 팀 데이터
+ * @param {Guild} guild - 길드 객체 (서버 내 이름 가져오기 위함)
  * @returns {EmbedBuilder} - 팀 목록 임베드
  */
-function createTeamListEmbed(teams) {
+function createTeamListEmbed(teams, guild) {
     const embed = new EmbedBuilder()
         .setColor(0x426cf5)
         .setTitle('📋 팀 목록')
@@ -443,9 +456,21 @@ function createTeamListEmbed(teams) {
 
     let description = ''
     teams.forEach((teamData, teamName) => {
-        const memberList = Array.from(teamData.members).map(userId => `<@${userId}>`).join(', ')
+        // 멤버 목록을 서버 내 이름으로 표시
+        const memberList = Array.from(teamData.members).map(userId => {
+            const member = guild.members.cache.get(userId)
+            return member ? (member.displayName || member.user.globalName || member.user.username) : `<@${userId}>`
+        }).join(', ')
+        
         const voiceChannel = teamData.voiceChannelId ? `<#${teamData.voiceChannelId}>` : '설정 안됨'
-        const captain = teamData.captain ? `<@${teamData.captain}>` : '설정 안됨'
+        
+        // 팀장도 서버 내 이름으로 표시
+        let captain = '설정 안됨'
+        if (teamData.captain) {
+            const captainMember = guild.members.cache.get(teamData.captain)
+            captain = captainMember ? (captainMember.displayName || captainMember.user.globalName || captainMember.user.username) : `<@${teamData.captain}>`
+        }
+        
         description += `**${teamName}** (점수: ${teamData.score})\n`
         description += `팀장: ${captain}\n`
         description += `멤버: ${memberList || '없음'}\n`
@@ -666,7 +691,7 @@ module.exports = {
                     await i.editReply({ embeds: [embed], components: [moveButtons, backButton] })
                     
                 } else if (i.customId === 'team_list') {
-                    const embed = createTeamListEmbed(currentTeams)
+                    const embed = createTeamListEmbed(currentTeams, i.guild)
                     const backButton = new ActionRowBuilder()
                         .addComponents(
                             new ButtonBuilder()
@@ -1294,10 +1319,16 @@ module.exports = {
                         return
                     }
                     
+                    // 멤버 목록을 서버 내 이름으로 표시
+                    const memberDisplayList = Array.from(teamData.members).map(userId => {
+                        const member = i.guild.members.cache.get(userId)
+                        return member ? (member.displayName || member.user.globalName || member.user.username) : `<@${userId}>`
+                    }).join(', ') || '없음'
+                    
                     const embed = new EmbedBuilder()
                         .setColor(0x426cf5)
                         .setTitle(`👥 "${teamName}" 멤버 관리`)
-                        .setDescription(`현재 멤버: ${Array.from(teamData.members).map(id => `<@${id}>`).join(', ') || '없음'}`)
+                        .setDescription(`현재 멤버: ${memberDisplayList}`)
                     
                     const userAddSelect = new ActionRowBuilder()
                         .addComponents(
@@ -1311,10 +1342,13 @@ module.exports = {
                     const components = [userAddSelect]
                     
                     if (teamData.members.size > 0) {
-                        const memberOptions = Array.from(teamData.members).map(memberId => ({
-                            label: interaction.guild.members.cache.get(memberId)?.displayName || memberId,
-                            value: memberId
-                        }))
+                        const memberOptions = Array.from(teamData.members).map(memberId => {
+                            const member = interaction.guild.members.cache.get(memberId)
+                            return {
+                                label: member ? (member.displayName || member.user.globalName || member.user.username) : memberId,
+                                value: memberId
+                            }
+                        })
                         
                         const userRemoveSelect = new ActionRowBuilder()
                             .addComponents(
@@ -1456,7 +1490,7 @@ module.exports = {
                     const selectedValue = i.values[0]
                     
                     if (i.customId === 'edit_team_select') {
-                        const embed = createTeamEditEmbed(selectedValue, currentTeams)
+                        const embed = createTeamEditEmbed(selectedValue, currentTeams, i.guild)
                         const buttons = createTeamEditButtons(selectedValue)
                         await i.editReply({ embeds: [embed], components: buttons })
                         
