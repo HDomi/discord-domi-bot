@@ -153,6 +153,39 @@ async function addBanpick(guildId, teamName, banpick) {
 }
 
 /**
+ * 안전하게 사용자 표시명을 가져오는 함수
+ * @param {Guild} guild - 길드 객체
+ * @param {string} userId - 사용자 ID
+ * @returns {Promise<string>} - 사용자 표시명
+ */
+async function getUserDisplayName(guild, userId) {
+    try {
+        // 캐시에서 먼저 확인
+        let member = guild.members.cache.get(userId);
+        
+        // 캐시에 없으면 fetch 시도
+        if (!member) {
+            try {
+                member = await guild.members.fetch(userId);
+            } catch (error) {
+                console.log(`사용자 ${userId}를 fetch할 수 없음:`, error.message);
+            }
+        }
+        
+        if (member) {
+            return member.displayName || member.user.globalName || member.user.username;
+        }
+        
+        // 멤버를 찾을 수 없는 경우 사용자 ID만 반환
+        return `사용자(${userId.slice(-4)})`;
+        
+    } catch (error) {
+        console.error(`getUserDisplayName 오류 (${userId}):`, error);
+        return `사용자(${userId.slice(-4)})`;
+    }
+}
+
+/**
  * 메인 메뉴 임베드를 생성하는 함수
  * @param {string} guildName - 길드 이름
  * @returns {EmbedBuilder} - 메인 메뉴 임베드
@@ -357,9 +390,9 @@ function createTeamSelectMenu(teams, customId, placeholder) {
  * @param {string} teamName - 팀 이름
  * @param {Map} teams - 팀 데이터
  * @param {Guild} guild - 길드 객체 (서버 내 이름 가져오기 위함)
- * @returns {EmbedBuilder} - 팀 편집 메뉴 임베드
+ * @returns {Promise<EmbedBuilder>} - 팀 편집 메뉴 임베드
  */
-function createTeamEditEmbed(teamName, teams, guild) {
+async function createTeamEditEmbed(teamName, teams, guild) {
     const teamData = teams.get(teamName)
     if (!teamData) {
         return new EmbedBuilder()
@@ -369,18 +402,16 @@ function createTeamEditEmbed(teamName, teams, guild) {
     }
 
     // 멤버 목록을 서버 내 이름으로 표시
-    const memberList = Array.from(teamData.members).map(userId => {
-        const member = guild.members.cache.get(userId)
-        return member ? (member.displayName || member.user.globalName || member.user.username) : `<@${userId}>`
-    }).join(', ') || '없음'
+    const memberPromises = Array.from(teamData.members).map(userId => getUserDisplayName(guild, userId))
+    const memberNames = await Promise.all(memberPromises)
+    const memberList = memberNames.join(', ') || '없음'
     
     const voiceChannel = teamData.voiceChannelId ? `<#${teamData.voiceChannelId}>` : '설정 안됨'
     
     // 팀장도 서버 내 이름으로 표시
     let captain = '설정 안됨'
     if (teamData.captain) {
-        const captainMember = guild.members.cache.get(teamData.captain)
-        captain = captainMember ? (captainMember.displayName || captainMember.user.globalName || captainMember.user.username) : `<@${teamData.captain}>`
+        captain = await getUserDisplayName(guild, teamData.captain)
     }
 
     return new EmbedBuilder()
@@ -441,9 +472,9 @@ function createTeamEditButtons(teamName) {
  * 팀 목록 임베드를 생성하는 함수
  * @param {Map} teams - 팀 데이터
  * @param {Guild} guild - 길드 객체 (서버 내 이름 가져오기 위함)
- * @returns {EmbedBuilder} - 팀 목록 임베드
+ * @returns {Promise<EmbedBuilder>} - 팀 목록 임베드
  */
-function createTeamListEmbed(teams, guild) {
+async function createTeamListEmbed(teams, guild) {
     const embed = new EmbedBuilder()
         .setColor(0x426cf5)
         .setTitle('📋 팀 목록')
@@ -455,27 +486,27 @@ function createTeamListEmbed(teams, guild) {
     }
 
     let description = ''
-    teams.forEach((teamData, teamName) => {
+    
+    // 각 팀에 대해 순차적으로 처리
+    for (const [teamName, teamData] of teams) {
         // 멤버 목록을 서버 내 이름으로 표시
-        const memberList = Array.from(teamData.members).map(userId => {
-            const member = guild.members.cache.get(userId)
-            return member ? (member.displayName || member.user.globalName || member.user.username) : `<@${userId}>`
-        }).join(', ')
+        const memberPromises = Array.from(teamData.members).map(userId => getUserDisplayName(guild, userId))
+        const memberNames = await Promise.all(memberPromises)
+        const memberList = memberNames.join(', ')
         
         const voiceChannel = teamData.voiceChannelId ? `<#${teamData.voiceChannelId}>` : '설정 안됨'
         
         // 팀장도 서버 내 이름으로 표시
         let captain = '설정 안됨'
         if (teamData.captain) {
-            const captainMember = guild.members.cache.get(teamData.captain)
-            captain = captainMember ? (captainMember.displayName || captainMember.user.globalName || captainMember.user.username) : `<@${teamData.captain}>`
+            captain = await getUserDisplayName(guild, teamData.captain)
         }
         
         description += `**${teamName}** (점수: ${teamData.score})\n`
         description += `팀장: ${captain}\n`
         description += `멤버: ${memberList || '없음'}\n`
         description += `음성채널: ${voiceChannel}\n\n`
-    })
+    }
 
     embed.setDescription(description)
     return embed
@@ -691,7 +722,7 @@ module.exports = {
                     await i.editReply({ embeds: [embed], components: [moveButtons, backButton] })
                     
                 } else if (i.customId === 'team_list') {
-                    const embed = createTeamListEmbed(currentTeams, i.guild)
+                    const embed = await createTeamListEmbed(currentTeams, i.guild)
                     const backButton = new ActionRowBuilder()
                         .addComponents(
                             new ButtonBuilder()
@@ -787,11 +818,13 @@ module.exports = {
                         )
                     
                     // 팀장이 있는 팀들만 선택 옵션으로 제공
-                    const teamOptions = teamsWithCaptains.map(([teamName, teamData]) => ({
-                        label: teamName,
-                        value: teamName,
-                        description: `팀장: ${interaction.guild.members.cache.get(teamData.captain)?.displayName || '알 수 없음'}`
-                    }))
+                    const teamOptions = await Promise.all(
+                        teamsWithCaptains.map(async ([teamName, teamData]) => ({
+                            label: teamName,
+                            value: teamName,
+                            description: `팀장: ${await getUserDisplayName(i.guild, teamData.captain)}`
+                        }))
+                    )
                     
                     const teamSelect = new ActionRowBuilder()
                         .addComponents(
@@ -1320,10 +1353,9 @@ module.exports = {
                     }
                     
                     // 멤버 목록을 서버 내 이름으로 표시
-                    const memberDisplayList = Array.from(teamData.members).map(userId => {
-                        const member = i.guild.members.cache.get(userId)
-                        return member ? (member.displayName || member.user.globalName || member.user.username) : `<@${userId}>`
-                    }).join(', ') || '없음'
+                    const memberPromises = Array.from(teamData.members).map(userId => getUserDisplayName(i.guild, userId))
+                    const memberNames = await Promise.all(memberPromises)
+                    const memberDisplayList = memberNames.join(', ') || '없음'
                     
                     const embed = new EmbedBuilder()
                         .setColor(0x426cf5)
@@ -1342,13 +1374,12 @@ module.exports = {
                     const components = [userAddSelect]
                     
                     if (teamData.members.size > 0) {
-                        const memberOptions = Array.from(teamData.members).map(memberId => {
-                            const member = interaction.guild.members.cache.get(memberId)
-                            return {
-                                label: member ? (member.displayName || member.user.globalName || member.user.username) : memberId,
+                        const memberOptions = await Promise.all(
+                            Array.from(teamData.members).map(async memberId => ({
+                                label: await getUserDisplayName(i.guild, memberId),
                                 value: memberId
-                            }
-                        })
+                            }))
+                        )
                         
                         const userRemoveSelect = new ActionRowBuilder()
                             .addComponents(
@@ -1432,14 +1463,13 @@ module.exports = {
                         return
                     }
                     
-                    const memberOptions = Array.from(teamData.members).map(memberId => {
-                        const member = interaction.guild.members.cache.get(memberId)
-                        return {
-                            label: member?.displayName || member?.user.username || memberId,
+                    const memberOptions = await Promise.all(
+                        Array.from(teamData.members).map(async memberId => ({
+                            label: await getUserDisplayName(i.guild, memberId),
                             value: memberId,
                             description: teamData.captain === memberId ? '현재 팀장' : '팀원'
-                        }
-                    })
+                        }))
+                    )
                     
                     const captainSelect = new ActionRowBuilder()
                         .addComponents(
@@ -1490,7 +1520,7 @@ module.exports = {
                     const selectedValue = i.values[0]
                     
                     if (i.customId === 'edit_team_select') {
-                        const embed = createTeamEditEmbed(selectedValue, currentTeams, i.guild)
+                        const embed = await createTeamEditEmbed(selectedValue, currentTeams, i.guild)
                         const buttons = createTeamEditButtons(selectedValue)
                         await i.editReply({ embeds: [embed], components: buttons })
                         
