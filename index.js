@@ -41,19 +41,19 @@ for (const file of commandFiles) {
 }
 
 client.on('messageCreate', async (message) => {
-    return;
-    // 욕설 필터링 (길드 메시지만)
-    if (message.guild && fWordCollector(message.content)) {
-        message.reply('욕하지 마세염!');
-    }
-    
-    if (message.author.bot) return false;
+    // 봇 메시지는 무시
+    if (message.author.bot) return;
 
     // DM 메시지 처리 (밴픽 시스템)
     if (!message.guild) {
         await handleBanpickDM(message);
         return;
     }
+
+    // 욕설 필터링 (길드 메시지만) - 현재 비활성화
+    // if (message.guild && fWordCollector(message.content)) {
+    //     message.reply('욕하지 마세염!');
+    // }
 
     // 길드 메시지 로깅
     if (!log[message.channelId]) {
@@ -64,38 +64,57 @@ client.on('messageCreate', async (message) => {
 
 // 밴픽 DM 처리 함수
 async function handleBanpickDM(message) {
+    console.log(`[DM 수신] ${message.author.tag}로부터 DM 수신: "${message.content}"`)
+    
     const { EmbedBuilder } = require('discord.js');
     const leagueCommand = client.commands.get('리그');
     
     // 사용자가 속한 모든 길드를 검사하여 활성 밴픽 세션 찾기
     for (const guild of client.guilds.cache.values()) {
         try {
+            console.log(`[DM 처리] 길드 ${guild.name}의 밴픽 세션 확인 중...`)
             // Firebase에서 밴픽 세션 가져오기
             const session = await leagueCommand.getBanpickSession(guild.id);
-            if (!session || !session.isActive) continue;
+            if (!session || !session.isActive) {
+                console.log(`[DM 처리] 길드 ${guild.name}: 활성 세션 없음`)
+                continue;
+            }
+            
+            console.log(`[DM 처리] 길드 ${guild.name}: 활성 밴픽 세션 발견`)
             
             // 메시지 보낸 사용자가 해당 세션의 팀장인지 확인
             const teamNames = Object.keys(session.teams);
             let userTeam = null;
             
+            console.log(`[DM 처리] 팀장 확인 중... 팀: ${teamNames.join(', ')}`)
+            
             for (const teamName of teamNames) {
+                console.log(`[DM 처리] ${teamName} 팀장: ${session.teams[teamName].captain}, DM 보낸 사용자: ${message.author.id}`)
                 if (session.teams[teamName].captain === message.author.id) {
                     userTeam = teamName;
                     break;
                 }
             }
             
-            if (!userTeam) continue;
+            if (!userTeam) {
+                console.log(`[DM 처리] ${message.author.tag}는 이 세션의 팀장이 아님`)
+                continue;
+            }
+            
+            console.log(`[DM 처리] ${message.author.tag}는 "${userTeam}" 팀의 팀장으로 확인됨`)
             
             // 이미 밴픽을 입력했는지 확인
             if (session.banpicks.has(userTeam)) {
+                console.log(`[DM 처리] ${userTeam} 팀은 이미 밴픽을 입력함`)
                 await message.reply('⚠️ 이미 밴픽을 입력하셨습니다.');
                 continue;
             }
             
             // 밴픽 등록 (Firebase 기반)
             const banpick = message.content.trim();
+            console.log(`[DM 처리] ${userTeam} 팀의 밴픽 "${banpick}" 등록 중...`)
             const banpickCount = await leagueCommand.addBanpick(guild.id, userTeam, banpick);
+            console.log(`[DM 처리] 밴픽 등록 완료. 현재 밴픽 수: ${banpickCount}/2`)
             
             await message.reply(`✅ "${banpick}"이(가) 밴픽으로 등록되었습니다!`);
             

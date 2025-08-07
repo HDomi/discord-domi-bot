@@ -1764,10 +1764,14 @@ module.exports = {
                         
                         // 각 팀장에게 DM 발송
                         try {
+                            console.log(`[밴픽] 팀장 정보 - ${team1Name}: ${team1Data.captain}, ${team2Name}: ${team2Data.captain}`)
+                            
                             const captain1 = await i.guild.members.fetch(team1Data.captain)
                             const captain2 = await i.guild.members.fetch(team2Data.captain)
                             
-                            const dmEmbed = new EmbedBuilder()
+                            console.log(`[밴픽] 팀장 fetch 완료 - ${captain1.user.tag}, ${captain2.user.tag}`)
+                            
+                            const dmEmbed1 = new EmbedBuilder()
                                 .setColor(0x426cf5)
                                 .setTitle('⚔️ 밴픽 요청')
                                 .setDescription(`**${team1Name}** vs **${team2Name}** 대결에서 밴픽을 입력해주세요.`)
@@ -1775,12 +1779,25 @@ module.exports = {
                                     { name: '📝 입력 방법', value: '이 DM에 밴픽할 내용을 채팅으로 입력하세요.\n(예: "바드", "야스오", "챔피언명" 등)' },
                                     { name: '⚠️ 주의사항', value: '• 상대방은 당신의 밴픽을 볼 수 없습니다\n• 먼저 입력하는 2명의 밴픽이 채택됩니다' }
                                 )
-                                .setFooter({ text: `당신의 팀: ${team1Data.captain === captain1.id ? team1Name : team2Name}` })
+                                .setFooter({ text: `당신의 팀: ${team1Name}` })
                             
-                            await captain1.send({ embeds: [dmEmbed] })
-                            await captain2.send({ 
-                                embeds: [dmEmbed.setFooter({ text: `당신의 팀: ${team2Data.captain === captain2.id ? team2Name : team1Name}` })] 
-                            })
+                            const dmEmbed2 = new EmbedBuilder()
+                                .setColor(0x426cf5)
+                                .setTitle('⚔️ 밴픽 요청')
+                                .setDescription(`**${team1Name}** vs **${team2Name}** 대결에서 밴픽을 입력해주세요.`)
+                                .addFields(
+                                    { name: '📝 입력 방법', value: '이 DM에 밴픽할 내용을 채팅으로 입력하세요.\n(예: "바드", "야스오", "챔피언명" 등)' },
+                                    { name: '⚠️ 주의사항', value: '• 상대방은 당신의 밴픽을 볼 수 없습니다\n• 먼저 입력하는 2명의 밴픽이 채택됩니다' }
+                                )
+                                .setFooter({ text: `당신의 팀: ${team2Name}` })
+                            
+                            console.log(`[밴픽] ${captain1.user.tag}에게 DM 발송 시도...`)
+                            await captain1.send({ embeds: [dmEmbed1] })
+                            console.log(`[밴픽] ${captain1.user.tag}에게 DM 발송 완료`)
+                            
+                            console.log(`[밴픽] ${captain2.user.tag}에게 DM 발송 시도...`)
+                            await captain2.send({ embeds: [dmEmbed2] })
+                            console.log(`[밴픽] ${captain2.user.tag}에게 DM 발송 완료`)
                             
                             // 상태 업데이트
                             const progressEmbed = new EmbedBuilder()
