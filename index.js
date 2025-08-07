@@ -46,9 +46,22 @@ const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('
 
 for (const file of commandFiles) {
     const filePath = path.join(commandsPath, file);
-    const command = require(filePath);
-    client.commands.set(command.data.name, command);
-    commands.push(command.data.toJSON());
+    const commandModule = require(filePath);
+    
+    // 배열로 export된 경우 (여러 명령어)
+    if (Array.isArray(commandModule)) {
+        for (const command of commandModule) {
+            if (command.data && command.execute) {
+                client.commands.set(command.data.name, command);
+                commands.push(command.data.toJSON());
+            }
+        }
+    } 
+    // 단일 객체로 export된 경우 (기존 방식)
+    else if (commandModule.data && commandModule.execute) {
+        client.commands.set(commandModule.data.name, commandModule);
+        commands.push(commandModule.data.toJSON());
+    }
 }
 
 client.on('messageCreate', async (message) => {
