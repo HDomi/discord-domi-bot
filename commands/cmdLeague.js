@@ -80,6 +80,79 @@ async function updateTeamScore(guildId, teamName, scoreChange) {
 }
 
 /**
+ * 밴픽 세션을 Firebase에서 가져오는 함수
+ * @param {string} guildId - 길드 ID
+ * @returns {Promise<object|null>} - 밴픽 세션 데이터
+ */
+async function getBanpickSession(guildId) {
+    const sessionRef = ref(database, `banpickSessions/${guildId}`);
+    const snapshot = await get(sessionRef);
+    if (snapshot.exists()) {
+        const sessionData = snapshot.val();
+        // banpicks Map 복원
+        if (sessionData.banpicks) {
+            sessionData.banpicks = new Map(Object.entries(sessionData.banpicks));
+        } else {
+            sessionData.banpicks = new Map();
+        }
+        return sessionData;
+    }
+    return null;
+}
+
+/**
+ * 밴픽 세션을 Firebase에 저장하는 함수
+ * @param {string} guildId - 길드 ID
+ * @param {object} sessionData - 세션 데이터
+ */
+async function setBanpickSession(guildId, sessionData) {
+    const dataToSave = {
+        ...sessionData,
+        banpicks: sessionData.banpicks ? Object.fromEntries(sessionData.banpicks) : {}
+    };
+    // originalInteraction은 저장하지 않음 (순환 참조 방지)
+    delete dataToSave.originalInteraction;
+    await set(ref(database, `banpickSessions/${guildId}`), dataToSave);
+}
+
+/**
+ * 밴픽 세션을 업데이트하는 함수
+ * @param {string} guildId - 길드 ID
+ * @param {object} updates - 업데이트할 데이터
+ */
+async function updateBanpickSession(guildId, updates) {
+    const updateData = { ...updates };
+    if (updateData.banpicks) {
+        updateData.banpicks = Object.fromEntries(updateData.banpicks);
+    }
+    await update(ref(database, `banpickSessions/${guildId}`), updateData);
+}
+
+/**
+ * 밴픽 세션을 Firebase에서 삭제하는 함수
+ * @param {string} guildId - 길드 ID
+ */
+async function removeBanpickSession(guildId) {
+    await remove(ref(database, `banpickSessions/${guildId}`));
+}
+
+/**
+ * 특정 팀의 밴픽을 추가하는 함수
+ * @param {string} guildId - 길드 ID
+ * @param {string} teamName - 팀 이름
+ * @param {string} banpick - 밴픽 내용
+ * @returns {Promise<number>} - 현재 밴픽 수
+ */
+async function addBanpick(guildId, teamName, banpick) {
+    const session = await getBanpickSession(guildId);
+    if (!session) return 0;
+    
+    session.banpicks.set(teamName, banpick);
+    await updateBanpickSession(guildId, { banpicks: session.banpicks });
+    return session.banpicks.size;
+}
+
+/**
  * 메인 메뉴 임베드를 생성하는 함수
  * @param {string} guildName - 길드 이름
  * @returns {EmbedBuilder} - 메인 메뉴 임베드
@@ -506,7 +579,11 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('리그')
         .setDescription('리그용 커맨드입니다.'),
-    banpickSessions, // 밴픽 세션 데이터 export
+    // 밴픽 관련 Firebase 함수들 export
+    getBanpickSession,
+    addBanpick,
+    updateBanpickSession,
+    removeBanpickSession,
     async execute(interaction) {
         if (!interaction.guild) {
             const embed = new EmbedBuilder()
@@ -716,8 +793,9 @@ module.exports = {
                     await i.editReply({ embeds: [embed], components: [teamSelect, cancelButton] })
                     
                 } else if (i.customId === 'cancel_banpick_setup') {
-                    // 밴픽 세션 정리
-                    banpickSessions.delete(i.guild.id)
+                    // 밴픽 세션 정리 (Firebase 기반)
+                    await removeBanpickSession(i.guild.id)
+                    banpickSessions.delete(i.guild.id) // 메모리에서도 제거
                     
                     const embed = new EmbedBuilder()
                         .setColor(0xff0000)
@@ -1667,12 +1745,20 @@ module.exports = {
                         
                         await i.editReply({ embeds: [embed], components: [] })
                         
-                        // 밴픽 세션 초기화
-                        banpickSessions.set(i.guild.id, {
+                        // 밴픽 세션 초기화 (Firebase 기반)
+                        const sessionData = {
                             teams: { [team1Name]: team1Data, [team2Name]: team2Data },
                             banpicks: new Map(), // teamName -> banpick
                             isActive: true,
                             channelId: interaction.channelId,
+                            timestamp: Date.now() // 세션 생성 시간
+                        };
+                        
+                        await setBanpickSession(i.guild.id, sessionData)
+                        
+                        // 메모리에도 원본 interaction 저장 (임시)
+                        banpickSessions.set(i.guild.id, {
+                            ...sessionData,
                             originalInteraction: interaction
                         })
                         
@@ -1722,7 +1808,8 @@ module.exports = {
                                 )
                             
                             await interaction.editReply({ embeds: [errorEmbed], components: createMainMenuButtons() })
-                            banpickSessions.delete(i.guild.id)
+                            await removeBanpickSession(i.guild.id) // Firebase에서 제거
+                            banpickSessions.delete(i.guild.id) // 메모리에서도 제거
                         }
                     }
                     
