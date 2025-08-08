@@ -8,15 +8,24 @@ const firebaseApp = initializeApp(firebaseConfig)
 const database = getDatabase(firebaseApp)
 
 /**
- * 현재 날짜를 YYYY-MM-DD 형식으로 반환하는 함수
+ * 현재 날짜를 YYYY-MM-DD 형식으로 반환하는 함수 (한국 시간 기준)
  * @returns {string} - 현재 날짜 (YYYY-MM-DD)
  */
 function getCurrentDate() {
+    // 한국 시간대(Asia/Seoul) 사용
     const now = new Date()
-    const year = now.getFullYear()
-    const month = String(now.getMonth() + 1).padStart(2, '0')
-    const day = String(now.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
+    const kstDate = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Seoul"}))
+    
+    const year = kstDate.getFullYear()
+    const month = String(kstDate.getMonth() + 1).padStart(2, '0')
+    const day = String(kstDate.getDate()).padStart(2, '0')
+    
+    const dateString = `${year}-${month}-${day}`
+    console.log(`[출석] 한국 시간 기준 날짜: ${dateString}`)
+    console.log(`[출석] 서버 UTC 시간: ${now.toISOString()}`)
+    console.log(`[출석] 한국 로컬 시간: ${kstDate.toISOString()}`)
+    
+    return dateString
 }
 
 /**
