@@ -1,11 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js')
-const { initializeApp } = require('firebase/app')
-const { getDatabase, ref, get, set, update } = require('firebase/database')
-const firebaseConfig = require('../config/firebaseConfig')
+const { FIREBASE_CONSTANTS } = require('../constants')
 
 // Firebase 앱 초기화
-const firebaseApp = initializeApp(firebaseConfig)
-const database = getDatabase(firebaseApp)
+const { secureGet, secureSet, secureUpdate } = require('../utils/firebaseAuth')
 
 /**
  * 현재 날짜를 YYYY-MM-DD 형식으로 반환하는 함수 (한국 시간 기준)
@@ -36,11 +33,11 @@ function getCurrentDate() {
  */
 async function getAttendanceData(guildId, userId) {
     try {
-        const dbRef = ref(database, `attendance/${guildId}/${userId}`)
-        const snapshot = await get(dbRef)
+        const path = `${FIREBASE_CONSTANTS.ATTENDANCE}/${guildId}/${userId}`
+        const data = await secureGet(path)
         
-        if (snapshot.exists()) {
-            return snapshot.val()
+        if (data) {
+            return data
         }
         
         return {
@@ -64,7 +61,8 @@ async function getAttendanceData(guildId, userId) {
  */
 async function setAttendanceData(guildId, userId, attendanceData) {
     try {
-        await set(ref(database, `attendance/${guildId}/${userId}`), attendanceData)
+        const path = `${FIREBASE_CONSTANTS.ATTENDANCE}/${guildId}/${userId}`
+        await secureSet(path, attendanceData)
     } catch (error) {
         console.error('출석 데이터 저장 실패:', error)
         throw error
@@ -78,14 +76,14 @@ async function setAttendanceData(guildId, userId, attendanceData) {
  */
 async function getServerAttendanceRanking(guildId) {
     try {
-        const dbRef = ref(database, `attendance/${guildId}`)
-        const snapshot = await get(dbRef)
+        const path = `${FIREBASE_CONSTANTS.ATTENDANCE}/${guildId}`
+        const data = await secureGet(path)
         
-        if (!snapshot.exists()) {
+        if (!data) {
             return []
         }
         
-        const attendanceData = snapshot.val()
+        const attendanceData = data
         const ranking = []
         
         for (const userId in attendanceData) {
