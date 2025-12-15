@@ -28,7 +28,14 @@ jobs:
 
           ssh-keyscan -T 5 -p ${{ secrets.SERVER_PORT }} \
             ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts || true
-
+      - name: Test SSH Connection
+        run: |
+          ssh -i ~/.ssh/id_rsa \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=no \
+            -p ${{ secrets.SERVER_PORT }} \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} \
+            "echo CONNECTED"
       # 🚀 서버 배포
       - name: Deploy
         run: |
