@@ -16,20 +16,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       # 🔑 SSH 키 설정
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           cat <<EOF > ~/.ssh/id_rsa
-          ${{ secrets.SSH_KEY }}
-          EOF
+${{ secrets.SSH_KEY }}
+EOF
           chmod 600 ~/.ssh/id_rsa
-      
+
           ssh-keyscan -T 5 -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts || true
+
       - name: Check SSH key
         run: |
           ls -l ~/.ssh
           head -n 3 ~/.ssh/id_rsa
+
       - name: Test SSH
         run: |
           ssh -i ~/.ssh/id_rsa \
@@ -38,11 +41,13 @@ jobs:
             -p ${{ secrets.SERVER_PORT }} \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} \
             "whoami; hostname"
+
       # 🚀 서버 배포
       - name: Deploy
         run: |
-          ssh -i ~/.ssh/id_rsa -vvv -o StrictHostKeyChecking=no \ 
-          ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} -p ${{ secrets.SERVER_PORT }} << 'EOF'
+          ssh -i ~/.ssh/id_rsa -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+            -p ${{ secrets.SERVER_PORT }} \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} <<EOF
 
           set -e
 
@@ -78,4 +83,4 @@ jobs:
             -e FIREBASE_USER_KEY='${{ secrets.FIREBASE_USER_KEY }}' \
             "$APP_NAME:latest"
 
-          EOF
+EOF
