@@ -20,7 +20,9 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          cat ~/.ssh/id_rsa ${{ secrets.SSH_PRIVATE_KEY }} << 'EOF'
+          cat <<EOF > ~/.ssh/id_rsa
+          ${{ secrets.SSH_PRIVATE_KEY }}
+          EOF
           chmod 600 ~/.ssh/id_rsa
       
           ssh-keyscan -T 5 -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts || true
