@@ -16,7 +16,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
+      - name: Debug secrets
+        run: |
+          echo "IP: ${{ secrets.SERVER_IP }}"
+          echo "PORT: ${{ secrets.SERVER_PORT }}"
       # 🔑 SSH 키 파일 생성
       - name: Setup SSH
         run: |
