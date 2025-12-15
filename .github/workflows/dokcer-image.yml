@@ -46,22 +46,26 @@ jobs:
           ssh -i ~/.ssh/id_rsa -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
             -p ${{ secrets.SERVER_PORT }} \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} <<EOF
-
+          
           set -e
-
-          mkdir -p "$APP_DIR"
+          
+          # /opt/docker 디렉토리 생성
+          sudo mkdir -p "$APP_DIR"
+          sudo chown $USER:$USER "$APP_DIR"
+          
           cd "$APP_DIR"
-
+          
           if [ ! -d ".git" ]; then
             git clone https://github.com/HDomi/discord-domi-bot.git .
           else
             git pull origin main
           fi
-
-          docker stop "$APP_NAME" || true
-          docker rm "$APP_NAME" || true
-
-          docker build -t "$APP_NAME:latest" .
+          
+          # Docker 컨테이너 배포
+          sudo docker stop "$APP_NAME" || true
+          sudo docker rm "$APP_NAME" || true
+          
+          sudo docker build -t "$APP_NAME:latest" .
 
           docker run -d \
             --restart unless-stopped \
