@@ -43,10 +43,7 @@ jobs:
       # 🚀 서버 배포
       - name: Deploy
         run: |
-          ssh -T -i ~/.ssh/id_rsa \
-            -o IdentitiesOnly=yes \
-            -p ${{ secrets.SERVER_PORT }} \
-            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << EOF
+          ssh -vvv -o StrictHostKeyChecking=no ${{ secrets.NAS_USER }}@${{ secrets.NAS_IP }} -p ${{ secrets.NAS_PORT }} << 'EOF'
 
           set -e
 
