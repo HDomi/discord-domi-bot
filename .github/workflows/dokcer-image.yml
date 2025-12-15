@@ -1,84 +1,70 @@
-name: Deploy to NAS Server
+name: Deploy to Linux Server
 
 on:
   push:
     branches: ["main"]
 
 env:
-  REGISTRY: ghcr.io
-  SERVER_DOCKER_IMG_NAME: discord-domi-bot # 여기에 실제 이미지 이름을 입력하세요
-  SERVER_NAME: discord-domi-bot # 여기에 실제 서버 이름을 입력하세요
-
-  #SECRETS
-  NAS_USER_ID: ${{ secrets.NAS_USER }}
-  NAS_IP: ${{ secrets.NAS_IP }}
-  NAS_PORT: ${{ secrets.NAS_PORT }}
-  DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-  CLIENT_ID: ${{ secrets.CLIENT_ID }}
-  STEAM_API: ${{ secrets.STEAM_API }}
-  
-  # Firebase Secrets
-  FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
-  FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
-  FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
-  FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-  FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
-  FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
-  FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
-  FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
-  FIREBASE_USER_KEY: ${{ secrets.FIREBASE_USER_KEY }}
-
+  APP_NAME: discord-domi-bot
+  APP_DIR: /opt/docker/discord-domi-bot
   DEPLOY_PORT: 5539
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set up SSH connection
-        uses: webfactory/ssh-agent@v0.5.3
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }} # GitHub Secrets에 SSH 키를 저장하세요
-
-      - name: Build and Deploy Docker Image
+      # 🔑 SSH 키 파일 생성
+      - name: Setup SSH
         run: |
-          ssh -vvv -o StrictHostKeyChecking=no ${{ secrets.NAS_USER }}@${{ secrets.NAS_IP }} -p ${{ secrets.NAS_PORT }} << 'EOF'
-            cd /volume1/docker/backend
-            rm -rf ${{ env.SERVER_NAME }}
-            mkdir ${{ env.SERVER_NAME }}
-            git clone -b main --single-branch https://github.com/HDomi/discord-domi-bot.git
-            cd ${{ env.SERVER_NAME }}
-            docker stop ${{ env.SERVER_DOCKER_IMG_NAME }} || true
-            docker rm ${{ env.SERVER_DOCKER_IMG_NAME }} || true
-            sleep 30
-            docker build \
-              --build-arg DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }} \
-              --build-arg CLIENT_ID=${{ secrets.CLIENT_ID }} \
-              --build-arg STEAM_API=${{ secrets.STEAM_API }} \
-              --build-arg FIREBASE_API_KEY=${{ secrets.FIREBASE_API_KEY }} \
-              --build-arg FIREBASE_AUTH_DOMAIN=${{ secrets.FIREBASE_AUTH_DOMAIN }} \
-              --build-arg FIREBASE_DATABASE_URL=${{ secrets.FIREBASE_DATABASE_URL }} \
-              --build-arg FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }} \
-              --build-arg FIREBASE_STORAGE_BUCKET=${{ secrets.FIREBASE_STORAGE_BUCKET }} \
-              --build-arg FIREBASE_MESSAGING_SENDER_ID=${{ secrets.FIREBASE_MESSAGING_SENDER_ID }} \
-              --build-arg FIREBASE_APP_ID=${{ secrets.FIREBASE_APP_ID }} \
-              --build-arg FIREBASE_MEASUREMENT_ID=${{ secrets.FIREBASE_MEASUREMENT_ID }} \
-              --build-arg FIREBASE_USER_KEY=${{ secrets.FIREBASE_USER_KEY }} \
-              -t ${{ env.SERVER_DOCKER_IMG_NAME }}:latest -f Dockerfile . && \
-            docker run \
-              -e DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }} \
-              -e CLIENT_ID=${{ secrets.CLIENT_ID }} \
-              -e STEAM_API=${{ secrets.STEAM_API }} \
-              -e FIREBASE_API_KEY=${{ secrets.FIREBASE_API_KEY }} \
-              -e FIREBASE_AUTH_DOMAIN=${{ secrets.FIREBASE_AUTH_DOMAIN }} \
-              -e FIREBASE_DATABASE_URL=${{ secrets.FIREBASE_DATABASE_URL }} \
-              -e FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }} \
-              -e FIREBASE_STORAGE_BUCKET=${{ secrets.FIREBASE_STORAGE_BUCKET }} \
-              -e FIREBASE_MESSAGING_SENDER_ID=${{ secrets.FIREBASE_MESSAGING_SENDER_ID }} \
-              -e FIREBASE_APP_ID=${{ secrets.FIREBASE_APP_ID }} \
-              -e FIREBASE_MEASUREMENT_ID=${{ secrets.FIREBASE_MEASUREMENT_ID }} \
-              -e FIREBASE_USER_KEY=${{ secrets.FIREBASE_USER_KEY }} \
-              -d --name ${{ env.SERVER_DOCKER_IMG_NAME }} -p ${{ env.DEPLOY_PORT }}:${{ env.DEPLOY_PORT }} ${{ env.SERVER_DOCKER_IMG_NAME }}:latest
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+
+      # 🚀 서버 배포
+      - name: Deploy
+        run: |
+          ssh -i ~/.ssh/id_rsa \
+            -o IdentitiesOnly=yes \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} \
+            -p ${{ secrets.SERVER_PORT }} << 'EOF'
+
+          set -e
+
+          mkdir -p $APP_DIR
+          cd $APP_DIR
+
+          if [ ! -d ".git" ]; then
+            git clone https://github.com/HDomi/discord-domi-bot.git .
+          else
+            git pull origin main
+          fi
+
+          docker stop $APP_NAME || true
+          docker rm $APP_NAME || true
+
+          docker build -t $APP_NAME:latest .
+
+          docker run -d \
+            --restart unless-stopped \
+            --name $APP_NAME \
+            -p $DEPLOY_PORT:$DEPLOY_PORT \
+            -e DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }} \
+            -e CLIENT_ID=${{ secrets.CLIENT_ID }} \
+            -e STEAM_API=${{ secrets.STEAM_API }} \
+            -e FIREBASE_API_KEY=${{ secrets.FIREBASE_API_KEY }} \
+            -e FIREBASE_AUTH_DOMAIN=${{ secrets.FIREBASE_AUTH_DOMAIN }} \
+            -e FIREBASE_DATABASE_URL=${{ secrets.FIREBASE_DATABASE_URL }} \
+            -e FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }} \
+            -e FIREBASE_STORAGE_BUCKET=${{ secrets.FIREBASE_STORAGE_BUCKET }} \
+            -e FIREBASE_MESSAGING_SENDER_ID=${{ secrets.FIREBASE_MESSAGING_SENDER_ID }} \
+            -e FIREBASE_APP_ID=${{ secrets.FIREBASE_APP_ID }} \
+            -e FIREBASE_MEASUREMENT_ID=${{ secrets.FIREBASE_MEASUREMENT_ID }} \
+            -e FIREBASE_USER_KEY=${{ secrets.FIREBASE_USER_KEY }} \
+            $APP_NAME:latest
+
           EOF
