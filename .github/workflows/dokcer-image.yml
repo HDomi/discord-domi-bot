@@ -7,7 +7,7 @@ on:
 env:
   APP_NAME: discord-domi-bot
   APP_DIR: /opt/docker/discord-domi-bot
-  DEPLOY_PORT: 5539
+  APP_PORT: 5539
 
 jobs:
   deploy:
@@ -17,7 +17,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
-      # 🔑 SSH 키 파일 생성
+      # 🔑 SSH 키 설정
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -25,41 +25,38 @@ jobs:
           ${{ secrets.SSH_PRIVATE_KEY }}
           EOF
           chmod 600 ~/.ssh/id_rsa
-      
+
           ssh-keyscan -T 5 -p ${{ secrets.SERVER_PORT }} \
             ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts || true
+
       # 🚀 서버 배포
       - name: Deploy
         run: |
           ssh -T -i ~/.ssh/id_rsa \
             -o IdentitiesOnly=yes \
             -p ${{ secrets.SERVER_PORT }} \
-            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
-      
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << EOF
+
           set -e
-      
-          APP_NAME="discord-domi-bot"
-          APP_DIR="/opt/docker/discord-domi-bot"
-          DEPLOY_PORT="5539"
-      
+
           mkdir -p "$APP_DIR"
           cd "$APP_DIR"
-      
+
           if [ ! -d ".git" ]; then
             git clone https://github.com/HDomi/discord-domi-bot.git .
           else
             git pull origin main
           fi
-      
+
           docker stop "$APP_NAME" || true
           docker rm "$APP_NAME" || true
-      
+
           docker build -t "$APP_NAME:latest" .
-      
+
           docker run -d \
             --restart unless-stopped \
             --name "$APP_NAME" \
-            -p "$DEPLOY_PORT:$DEPLOY_PORT" \
+            -p "$APP_PORT:$APP_PORT" \
             -e DISCORD_TOKEN='${{ secrets.DISCORD_TOKEN }}' \
             -e CLIENT_ID='${{ secrets.CLIENT_ID }}' \
             -e STEAM_API='${{ secrets.STEAM_API }}' \
@@ -73,5 +70,5 @@ jobs:
             -e FIREBASE_MEASUREMENT_ID='${{ secrets.FIREBASE_MEASUREMENT_ID }}' \
             -e FIREBASE_USER_KEY='${{ secrets.FIREBASE_USER_KEY }}' \
             "$APP_NAME:latest"
-      
+
           EOF
