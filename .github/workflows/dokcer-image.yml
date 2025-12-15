@@ -21,10 +21,10 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          cat << 'EOF' > ~/.ssh/id_ed25519
+          cat << 'EOF' > ~/.ssh/id_rsa
           ${{ secrets.SSH_PRIVATE_KEY }}
           EOF
-          chmod 600 ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_rsa
 
           ssh-keyscan -T 5 -p ${{ secrets.SERVER_PORT }} \
             ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts || true
@@ -32,7 +32,7 @@ jobs:
       # 🚀 서버 배포
       - name: Deploy
         run: |
-          ssh -T -i ~/.ssh/id_ed25519 \
+          ssh -T -i ~/.ssh/id_rsa \
             -o IdentitiesOnly=yes \
             -p ${{ secrets.SERVER_PORT }} \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << EOF
