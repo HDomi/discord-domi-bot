@@ -43,7 +43,7 @@ jobs:
       # 🚀 서버 배포
       - name: Deploy
         run: |
-          ssh -vvv -o StrictHostKeyChecking=no ${{ secrets.NAS_USER }}@${{ secrets.NAS_IP }} -p ${{ secrets.NAS_PORT }} << 'EOF'
+          ssh -vvv -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} -p ${{ secrets.SERVER_PORT }} << 'EOF'
 
           set -e
 
