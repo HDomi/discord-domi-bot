@@ -28,6 +28,10 @@ jobs:
 
           ssh-keyscan -T 5 -p ${{ secrets.SERVER_PORT }} \
             ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts || true
+      - name: Check SSH key
+        run: |
+          ls -l ~/.ssh
+          cat ~/.ssh/id_rsa
       - name: Test SSH Connection
         run: |
           ssh -i ~/.ssh/id_rsa \
