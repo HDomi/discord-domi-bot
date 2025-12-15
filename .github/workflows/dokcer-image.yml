@@ -51,8 +51,7 @@ jobs:
           
           # /opt/docker 디렉토리 생성
           sudo mkdir -p "$APP_DIR"
-          sudo chown $USER:$USER "$APP_DIR"
-          
+          sudo chown deploy:deploy "$APP_DIR"
           cd "$APP_DIR"
           
           if [ ! -d ".git" ]; then
