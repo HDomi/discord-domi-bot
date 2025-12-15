@@ -16,10 +16,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Debug secrets
-        run: |
-          echo "IP: ${{ secrets.SERVER_IP }}"
-          echo "PORT: ${{ secrets.SERVER_PORT }}"
+      
       # 🔑 SSH 키 파일 생성
       - name: Setup SSH
         run: |
@@ -28,9 +25,9 @@ jobs:
           ${{ secrets.SSH_PRIVATE_KEY }}
           EOF
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
-
-
+      
+          ssh-keyscan -T 5 -p ${{ secrets.SERVER_PORT }} \
+            ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts || true
       # 🚀 서버 배포
       - name: Deploy
         run: |
