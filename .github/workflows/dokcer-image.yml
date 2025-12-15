@@ -16,22 +16,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
       # 🔑 SSH 키 설정
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          cat << EOF > ~/.ssh/id_rsa
-          ${{ secrets.SSH_PRIVATE_KEY }}
-          EOF
+          cat <<EOF > ~/.ssh/id_rsa \
+          ${{ secrets.SSH_PRIVATE_KEY }} << 'EOF'
           chmod 600 ~/.ssh/id_rsa
-
-          ssh-keyscan -T 5 -p ${{ secrets.SERVER_PORT }} \
-            ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts || true
+      
+          ssh-keyscan -T 5 -p ${{ secrets.SERVER_PORT }} ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts || true
       - name: Check SSH key
         run: |
           ls -l ~/.ssh
-          cat ~/.ssh/id_rsa
+          head -n 3 ~/.ssh/id_rsa
       - name: Test SSH
         run: |
           ssh -i ~/.ssh/id_rsa \
